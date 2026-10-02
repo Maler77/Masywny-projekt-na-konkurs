@@ -1,1 +1,0 @@
-# Masywny-projekt-na-konkurs
