@@ -27,6 +27,19 @@ const platforms = [
     { x: 1150, y: 420, w: 60, h: 60 }, // niski blok do wskakiwania
 ];
 
+// Wygląd gracza. Hitbox (40 x 40, patrz niżej) to to, z czym zderzasz się w grze,
+// a sprite to tylko obrazek narysowany na wierzchu, może być od niego większy.
+const PLAYER_SPRITE = {
+    src: "assets/player.png", // ścieżka względem index.html
+    width: 150,                // rozmiar rysowania obrazka w jednostkach świata
+    height: 150,
+    pixelArt: false,          // true = ostre piksele (bez wygładzania) dla pixel artu
+};
+
+// Obrazek ładuje się w tle. Dopóki się nie wczyta (lub gdy go brak), rysujemy kwadrat.
+const playerImage = new Image();
+playerImage.src = PLAYER_SPRITE.src;
+
 // Czy dwa prostokąty na siebie nachodzą (kolizja AABB).
 function overlaps(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -36,12 +49,13 @@ export function createGame() {
     // Gracz: (x, y) to lewy górny róg, vx/vy to prędkość.
     const player = {
         w: 40,
-        h: 40,
+        h: 120,
         x: 100,
-        y: 440,
+        y: 370,
         vx: 0,
         vy: 0,
         onGround: false,
+        facing: 1, // 1 = w prawo, -1 = w lewo (do odbijania obrazka)
     };
 
     const camera = createCamera({
@@ -65,6 +79,7 @@ export function createGame() {
     function update(dt, input) {
         // 1) Ruch poziomy
         player.vx = input.moveX() * MOVE_SPEED;
+        if (player.vx !== 0) player.facing = Math.sign(player.vx);
 
         // 2) Skok: tylko z ziemi i tylko przy świeżym wciśnięciu klawisza
         if (input.jumpPressed() && player.onGround) {
@@ -106,6 +121,29 @@ export function createGame() {
         camera.follow(player, dt);
     }
 
+    function drawPlayer(ctx) {
+        const imageReady = playerImage.complete && playerImage.naturalWidth > 0;
+
+        if (!imageReady) {
+            // Zapas: kwadrat, gdy brak obrazka.
+            ctx.fillStyle = "#79d7c4";
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            return;
+        }
+
+        // Obrazek stoi "stopami" na dole hitboxa i jest wyśrodkowany w poziomie.
+        const { width, height, pixelArt } = PLAYER_SPRITE;
+        const centerX = player.x + player.w / 2;
+        const top = player.y + player.h - height;
+
+        ctx.imageSmoothingEnabled = !pixelArt;
+        ctx.save();
+        ctx.translate(centerX, 0);
+        ctx.scale(player.facing, 1); // odbicie lustrzane, gdy idziesz w lewo
+        ctx.drawImage(playerImage, -width / 2, top, width, height);
+        ctx.restore();
+    }
+
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
     function draw(ctx) {
         // Tło na stałe przyklejone do ekranu (nie przesuwa się z kamerą).
@@ -143,11 +181,7 @@ export function createGame() {
         }
 
         // Gracz
-        ctx.fillStyle = "#79d7c4";
-        ctx.fillRect(player.x, player.y, player.w, player.h);
-        ctx.strokeStyle = "#a4f1dc";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(player.x, player.y, player.w, player.h);
+        drawPlayer(ctx);
 
         ctx.restore();
 
