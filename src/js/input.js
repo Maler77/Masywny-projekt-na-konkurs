@@ -1,24 +1,34 @@
 // Obsługa klawiatury. Pamięta, które klawisze są wciśnięte
-// oraz które zostały wciśnięte dokładnie w tej klatce (do skoku).
+// oraz które zostały wciśnięte dokładnie w tej klatce (skok, dash, debug).
 
 const LEFT = ["ArrowLeft", "KeyA"];
 const RIGHT = ["ArrowRight", "KeyD"];
 const JUMP = ["Space", "ArrowUp", "KeyW"];
+const DASH = ["ShiftLeft", "ShiftRight"];
+const DEBUG = ["Slash"];
 
-// Klawisze, którym blokujemy domyślne działanie (strzałki i spacja przewijają stronę).
-const GAME_KEYS = new Set([...LEFT, ...RIGHT, ...JUMP, "ArrowDown"]);
+// Klawisze, którym blokujemy domyślne działanie (strzałki i spacja przewijają stronę,
+// a "/" w Firefoksie otwiera szybkie wyszukiwanie).
+const GAME_KEYS = new Set([...LEFT, ...RIGHT, ...JUMP, ...DEBUG, "ArrowDown"]);
+
+// Zwraca kod klawisza. Znak "/" traktujemy zawsze jako "Slash", także na układach,
+// gdzie jest pod Shift+7 (np. niemiecki).
+function codeOf(event) {
+    return event.key === "/" ? "Slash" : event.code;
+}
 
 export function createInput() {
     const down = new Set();    // klawisze trzymane teraz
     const pressed = new Set(); // klawisze wciśnięte w tej klatce
 
     const onKeyDown = (event) => {
-        if (GAME_KEYS.has(event.code)) event.preventDefault();
+        const code = codeOf(event);
+        if (GAME_KEYS.has(code)) event.preventDefault();
         // Przytrzymany klawisz wysyła powtórzenia; liczymy tylko pierwsze wciśnięcie.
-        if (!event.repeat) pressed.add(event.code);
-        down.add(event.code);
+        if (!event.repeat) pressed.add(code);
+        down.add(code);
     };
-    const onKeyUp = (event) => down.delete(event.code);
+    const onKeyUp = (event) => down.delete(codeOf(event));
     // Gdy okno traci fokus, puszczamy wszystkie klawisze (inaczej postać "ucieka").
     const onBlur = () => down.clear();
 
@@ -35,6 +45,10 @@ export function createInput() {
         jumpHeld: () => any(JUMP, down),
         // Czy klawisz skoku został dopiero co wciśnięty (jeden skok na naciśnięcie).
         jumpPressed: () => any(JUMP, pressed),
+        // Czy Shift został dopiero co wciśnięty (dash).
+        dashPressed: () => any(DASH, pressed),
+        // Czy "/" został dopiero co wciśnięty (przełączenie trybu debug).
+        debugPressed: () => any(DEBUG, pressed),
         // Wołane raz na koniec każdej klatki z main.js.
         endFrame: () => pressed.clear(),
         destroy() {
