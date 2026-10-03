@@ -8,10 +8,9 @@ export function createViewport(canvas) {
 
     let frameId;
     const resize = () => {
-        const bounds = canvas.getBoundingClientRect();
         const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.max(1, Math.round(bounds.width * pixelRatio));
-        canvas.height = Math.max(1, Math.round(bounds.height * pixelRatio));
+        canvas.width = Math.max(1, Math.round(canvas.clientWidth * pixelRatio));
+        canvas.height = Math.max(1, Math.round(canvas.clientHeight * pixelRatio));
     };
 
     function render() {

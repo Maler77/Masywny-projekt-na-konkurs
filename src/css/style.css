@@ -26,6 +26,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
 .intro { margin: .75rem 0 0; color: #aab7c5; }
 
 .game {
+    position: relative;
     width: 100%;
     padding: .75rem;
     border: 1px solid #354453;
@@ -43,5 +44,40 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
     border-radius: .5rem;
     background: #111a23;
 }
+
+.game__start {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: .85rem 1.4rem;
+    border: 1px solid #a4f1dc;
+    border-radius: .6rem;
+    background: #79d7c4;
+    color: #10201f;
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.game__start:hover { background: #a4f1dc; }
+.game__start:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+
+body.game-started { overflow: hidden; }
+body.game-started .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
+body.game-started .page__header { display: none; }
+body.game-started .game {
+    position: fixed;
+    z-index: 10;
+    inset: 0;
+    width: 100%;
+    height: 100vh;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+}
+body.game-started .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.game-started .game__start { display: none; }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

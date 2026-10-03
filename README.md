@@ -4,7 +4,7 @@ Minimalny szkielet gry działającej w nowoczesnej przeglądarce. Projekt używa
 
 ## Uruchomienie
 
-Otwórz `index.html` bezpośrednio w przeglądarce albo uruchom lokalny serwer HTTP w katalogu projektu:
+Uruchom lokalny serwer HTTP w katalogu projektu (wymagany dla modułów JavaScript):
 
 ```bash
 python -m http.server 8000
@@ -22,4 +22,4 @@ src/
   js/viewport.js Renderowanie i skalowanie obszaru gry
 ```
 
-Obszar gry ma proporcje 16:9 i używa stałego układu współrzędnych 960 × 540, skalowanego do szerokości strony. Scena zawiera tymczasowe tło i siatkę. Nie zawiera mechanik rozgrywki.
+Obszar gry ma proporcje 16:9 i używa stałego układu współrzędnych 960 × 540, skalowanego do szerokości strony. Przycisk „Rozpocznij grę” rozwija scenę na całe okno strony (bez uruchamiania trybu fullscreen przeglądarki). Scena zawiera tymczasowe tło i siatkę. Nie zawiera mechanik rozgrywki.
