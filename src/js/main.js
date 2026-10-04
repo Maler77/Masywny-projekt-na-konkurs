@@ -25,56 +25,21 @@ const loseReason = document.querySelector("#lose-reason");
 const winTime = document.querySelector("#win-time");
 const LETTERS = ["A", "B", "C"];
 
-// ---------- Pełny ekran ----------
-
-function isFullscreen() {
-    return Boolean(document.fullscreenElement ?? document.webkitFullscreenElement);
-}
-
-// Przeglądarka pozwala wejść w pełny ekran tylko w reakcji na akcję użytkownika
-// (kliknięcie, Enter), dlatego wołamy to z obsługi przycisków menu.
-function enterFullscreen() {
-    const element = document.documentElement;
-    const request = element.requestFullscreen ?? element.webkitRequestFullscreen;
-    if (!request) return; // np. iPhone nie obsługuje fullscreena dla stron
-    try {
-        Promise.resolve(request.call(element)).catch(() => {}); // odmowa = gramy w oknie
-    } catch {
-        // ignorujemy
-    }
-}
-
-function exitFullscreen() {
-    if (!isFullscreen()) return;
-    const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
-    try {
-        Promise.resolve(exit.call(document)).catch(() => {});
-    } catch {
-        // ignorujemy
-    }
-}
-
-function toggleFullscreen() {
-    if (isFullscreen()) exitFullscreen();
-    else enterFullscreen();
-}
-
 // ---------- Stan gry ----------
-// "landing" - ekran startowy na stronie
-// "menu"    - menu główne (pełny ekran, część gry)
+// "menu"    - menu główne, widoczne po otwarciu strony
 // "playing" - gra
 // "paused"  - pauza
 // "bomb"    - okno z pytaniem przy bombie (czas leci dalej)
 // "lost"    - ekran przegranej
 // "won"     - ekran wygranej
 
-let state = "landing";
+let state = "menu";
 let debug = false;      // tryb debug włączany klawiszem "/"
 let activeBomb = null;  // bomba, której pytanie jest teraz otwarte
+let ignoreEscapeUntil = 0;
 
 // Który ekran menu (data-screen w index.html) odpowiada któremu stanowi.
 const SCREEN_FOR_STATE = {
-    landing: "landing",
     menu: "main",
     paused: "pause",
     bomb: "bomb",
@@ -83,20 +48,18 @@ const SCREEN_FOR_STATE = {
 };
 
 const menu = createMenu({
-    enter: enterGame,
     play: startGame,
     resume: resumeGame,
-    fullscreen: toggleFullscreen,
     quit: quitToMenu,
-    exit: exitGame,
     answer: (data) => answerBomb(Number(data.index)),
 });
 
 function setState(next) {
     state = next;
 
-    // Poza ekranem startowym gra zajmuje całe okno (styl .game-fullscreen w CSS).
-    document.body.classList.toggle("game-fullscreen", next !== "landing");
+    // Rozszerzamy viewport tylko podczas rozgrywki i ekranów w jej trakcie.
+    const gameIsActive = ["playing", "paused", "bomb", "lost", "won"].includes(next);
+    document.body.classList.toggle("game-active", gameIsActive);
     // Kursor jest ukryty tylko, gdy naprawdę grasz.
     document.body.classList.toggle("cursor-hidden", next === "playing");
 
@@ -104,17 +67,49 @@ function setState(next) {
     else menu.show(SCREEN_FOR_STATE[next]);
 }
 
-// "Rozpocznij grę" na ekranie startowym: pełny ekran i menu główne.
-function enterGame() {
-    enterFullscreen();
-    setState("menu");
-}
-
-// "Graj" w menu głównym: start poziomu od początku (pełny reset: gracz, bomby, timer).
+// Rozpocznij poziom od początku (pełny reset: gracz, bomby, timer).
 function startGame() {
     game.reset();
     activeBomb = null;
     setState("playing");
+    enterFullscreen();
+}
+
+// Fullscreen is requested from the user's Play click. Keyboard Lock lets Escape
+// open the pause menu without leaving fullscreen where the browser supports it.
+function enterFullscreen() {
+    const root = document.documentElement;
+    const request = root.requestFullscreen ?? root.webkitRequestFullscreen;
+    if (isFullscreen() || typeof request !== "function") return;
+
+    try {
+        Promise.resolve(request.call(root, { keyboardLock: "browser" })).catch(() => {
+            // Keep the game playable in browsers without keyboard-lock support.
+            if (!isFullscreen()) {
+                Promise.resolve(request.call(root)).catch(() => {});
+            }
+        });
+    } catch {
+        try {
+            Promise.resolve(request.call(root)).catch(() => {});
+        } catch {
+            // CSS still expands the game to the page viewport if fullscreen is denied.
+        }
+    }
+}
+
+function exitFullscreen() {
+    const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
+    if (!isFullscreen() || typeof exit !== "function") return;
+    try {
+        Promise.resolve(exit.call(document)).catch(() => {});
+    } catch {
+        // The main menu remains available in the normal page layout.
+    }
+}
+
+function isFullscreen() {
+    return Boolean(document.fullscreenElement ?? document.webkitFullscreenElement);
 }
 
 function pauseGame() {
@@ -125,21 +120,31 @@ function resumeGame() {
     if (state === "paused") setState("playing");
 }
 
-// "Menu główne" z pauzy i z ekranów wygranej/przegranej: wracamy do menu w pełnym ekranie.
+// "Menu główne" z pauzy i z ekranów wygranej/przegranej.
 function quitToMenu() {
     game.reset();
     activeBomb = null;
+    exitFullscreen();
     setState("menu");
 }
 
-// "Wyjdź" w menu głównym: strona nie może sama się zamknąć, więc wychodzimy z pełnego
-// ekranu i wracamy na ekran startowy.
-function exitGame() {
-    exitFullscreen();
-    game.reset();
-    activeBomb = null;
-    setState("landing");
+// Request the browser to keep Escape inside the game while fullscreen is active.
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isFullscreen() && ["playing", "paused", "bomb"].includes(state)) {
+        event.preventDefault();
+    }
+}, true);
+
+function onFullscreenChange() {
+    // If the browser exits fullscreen (for example with Escape where keyboard
+    // locking is unavailable), preserve the page-filling pause screen.
+    if (!isFullscreen() && state === "playing") {
+        ignoreEscapeUntil = performance.now() + 300;
+        pauseGame();
+    }
 }
+document.addEventListener("fullscreenchange", onFullscreenChange);
+document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // ---------- Bomby, wygrana i przegrana ----------
 
@@ -186,19 +191,7 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("blur", pauseGame);
 
-// Esc w pełnym ekranie jest "zjadany" przez przeglądarkę (wychodzi z fullscreena)
-// i do gry zwykle nie dociera. Wtedy pauzujemy po samej zmianie trybu.
-let ignoreEscapeUntil = 0;
-function onFullscreenChange() {
-    if (!isFullscreen() && state === "playing") {
-        ignoreEscapeUntil = performance.now() + 300; // żeby ten sam Esc nie wznowił gry
-        pauseGame();
-    }
-}
-document.addEventListener("fullscreenchange", onFullscreenChange);
-document.addEventListener("webkitfullscreenchange", onFullscreenChange);
-
-setState("landing");
+setState("menu");
 
 // ---------- Pętla gry ----------
 

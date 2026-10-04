@@ -10,34 +10,21 @@
 </head>
 <body>
     <main class="page">
-        <header class="page__header">
-            <p class="eyebrow">Projekt konkursowy</p>
-            <h1>Gra przeglądarkowa</h1>
-            <p class="intro">Podstawowa scena gry jest gotowa na dalszą rozbudowę.</p>
-        </header>
-
         <section class="game" aria-labelledby="game-title">
             <h2 id="game-title" class="visually-hidden">Obszar gry</h2>
             <canvas class="game__viewport" aria-label="Obszar gry 2D" role="img"></canvas>
 
-            <!-- Ekran startowy (na stronie). Kliknięcie włącza pełny ekran i otwiera menu główne. -->
-            <div class="menu" data-screen="landing" role="dialog" aria-label="Start">
-                <button class="menu__button menu__button--primary" type="button" data-action="enter">Rozpocznij grę</button>
-            </div>
-
-            <!-- Menu główne (w pełnym ekranie, część gry) -->
+            <!-- Menu główne jest pierwszym ekranem po otwarciu strony. -->
             <div class="menu" data-screen="main" data-texture="menuBackground" role="dialog" aria-labelledby="menu-main-title" hidden>
                 <h3 id="menu-main-title" class="menu__title">Gra przeglądarkowa</h3>
-                <button class="menu__button menu__button--primary" type="button" data-action="play">Graj</button>
+                <button class="menu__button menu__button--primary" type="button" data-action="play">Rozpocznij grę</button>
                 <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
-                <button class="menu__button" type="button" data-action="exit">Wyjdź</button>
             </div>
 
             <!-- Menu pauzy (Esc podczas gry) -->
             <div class="menu" data-screen="pause" role="dialog" aria-labelledby="menu-pause-title" hidden>
                 <h3 id="menu-pause-title" class="menu__title">Pauza</h3>
                 <button class="menu__button menu__button--primary" type="button" data-action="resume">Wznów</button>
-                <button class="menu__button" type="button" data-action="fullscreen">Pełny ekran</button>
                 <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
                 <button class="menu__button" type="button" data-action="quit">Menu główne</button>
             </div>

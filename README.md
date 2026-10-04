@@ -22,4 +22,4 @@ src/
   js/viewport.js Renderowanie i skalowanie obszaru gry
 ```
 
-Obszar gry ma proporcje 16:9 i używa stałego układu współrzędnych 960 × 540, skalowanego do szerokości strony. Przycisk „Rozpocznij grę” rozwija scenę na całe okno strony (bez uruchamiania trybu fullscreen przeglądarki). Scena zawiera tymczasowe tło i siatkę. Nie zawiera mechanik rozgrywki.
+Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij grę” uruchamia rozgrywkę i prosi przeglądarkę o tryb fullscreen. Menu pauzy pozostaje na pełnym ekranie podczas gry, gdy przeglądarka obsługuje blokadę klawisza Esc; przy braku tej obsługi Escape może wyjść z trybu przeglądarki, a gra pokaże menu pauzy w układzie wypełniającym stronę. Przycisk „Menu główne” kończy fullscreen. Obszar gry ma układ współrzędnych 960 × 540 i tymczasowe tło. Przy proporcjach innych niż 16:9 renderer zachowuje proporcje świata i dodaje pasy.

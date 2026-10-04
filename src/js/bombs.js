@@ -2,7 +2,7 @@
 // To jest jedyne miejsce, które musisz edytować, żeby zmienić treść pytań.
 
 // Czas na rozbrojenie wszystkich bomb, w sekundach.
-export const TIME_LIMIT = 60;
+export const TIME_LIMIT = 120;
 
 // Każda bomba:
 //   x, y       lewy górny róg bomby w świecie gry (bomba ma 36 x 36, y = góra platformy - 36)

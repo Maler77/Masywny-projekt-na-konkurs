@@ -14,11 +14,12 @@ body {
     background: radial-gradient(ellipse at top, #1b2937, #10151c 65%);
 }
 
-.page {
+/* Nie potrzebne, ale jak coś to jeszcze zostawiam */
+/* .page {
     width: min(100% - 2rem, 960px);
     margin: 0 auto;
     padding: clamp(2rem, 7vw, 5rem) 0;
-}
+} */
 
 .page__header { margin-bottom: 2rem; }
 .eyebrow { margin: 0 0 .5rem; color: #79d7c4; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -155,12 +156,12 @@ kbd {
 
 .menu__button.bomb-panel__option { width: 100%; padding: 1.1rem 1.4rem; font-size: 1.15rem; text-align: left; }
 
-/* ---------- Układ pełnoekranowy (menu główne, gra, pauza) ---------- */
+/* ---------- Rozszerzony układ podczas rozgrywki ---------- */
 
-body.game-fullscreen { overflow: hidden; }
-body.game-fullscreen .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
-body.game-fullscreen .page__header { display: none; }
-body.game-fullscreen .game {
+body.game-active { overflow: hidden; }
+body.game-active .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
+body.game-active .page__header { display: none; }
+body.game-active .game {
     position: fixed;
     z-index: 10;
     inset: 0;
@@ -170,8 +171,8 @@ body.game-fullscreen .game {
     border: 0;
     border-radius: 0;
 }
-body.game-fullscreen .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
-body.game-fullscreen .menu { border-radius: 0; }
+body.game-active .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.game-active .menu { border-radius: 0; }
 
 /* Kursor jest ukryty tylko podczas samej gry (w menu i pauzie jest widoczny). */
 body.cursor-hidden .game { cursor: none; }
