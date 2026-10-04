@@ -1,11 +1,12 @@
 // Obsługa klawiatury. Pamięta, które klawisze są wciśnięte
-// oraz które zostały wciśnięte dokładnie w tej klatce (skok, dash, debug).
+// oraz które zostały wciśnięte dokładnie w tej klatce (skok, dash, debug, pauza).
 
 const LEFT = ["ArrowLeft", "KeyA"];
 const RIGHT = ["ArrowRight", "KeyD"];
 const JUMP = ["Space", "ArrowUp", "KeyW"];
 const DASH = ["ShiftLeft", "ShiftRight"];
 const DEBUG = ["Slash"];
+const PAUSE = ["Escape"];
 
 // Klawisze, którym blokujemy domyślne działanie (strzałki i spacja przewijają stronę,
 // a "/" w Firefoksie otwiera szybkie wyszukiwanie).
@@ -23,7 +24,9 @@ export function createInput() {
 
     const onKeyDown = (event) => {
         const code = codeOf(event);
-        if (GAME_KEYS.has(code)) event.preventDefault();
+        // Na przycisku menu zostawiamy domyślne działanie (Spacja i Enter mają go "klikać").
+        const onButton = event.target instanceof HTMLButtonElement;
+        if (GAME_KEYS.has(code) && !onButton) event.preventDefault();
         // Przytrzymany klawisz wysyła powtórzenia; liczymy tylko pierwsze wciśnięcie.
         if (!event.repeat) pressed.add(code);
         down.add(code);
@@ -49,6 +52,8 @@ export function createInput() {
         dashPressed: () => any(DASH, pressed),
         // Czy "/" został dopiero co wciśnięty (przełączenie trybu debug).
         debugPressed: () => any(DEBUG, pressed),
+        // Czy Esc został dopiero co wciśnięty (pauza / wznowienie / powrót).
+        escapePressed: () => any(PAUSE, pressed),
         // Wołane raz na koniec każdej klatki z main.js.
         endFrame: () => pressed.clear(),
         destroy() {

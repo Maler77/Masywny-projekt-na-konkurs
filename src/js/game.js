@@ -80,12 +80,17 @@ export function createGame() {
     });
     camera.snapTo(player);
 
+    // Ustawia gracza na starcie i czyści jego stan (start gry, powrót do menu, wypadnięcie).
     function respawn() {
         player.x = 100;
         player.y = 440;
         player.vx = 0;
         player.vy = 0;
+        player.onGround = false;
+        player.facing = 1;
         player.dashTime = 0;
+        player.dashCooldown = 0;
+        ghosts.length = 0;
         camera.snapTo(player);
     }
 
@@ -263,7 +268,7 @@ export function createGame() {
     }
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
-    function draw(ctx, { debug = false, fps = 0 } = {}) {
+    function draw(ctx, { debug = false, fps = 0, hud = true } = {}) {
         // Tło na stałe przyklejone do ekranu (nie przesuwa się z kamerą).
         const sky = ctx.createLinearGradient(0, 0, 0, VIEW_HEIGHT);
         sky.addColorStop(0, "#203748");
@@ -308,18 +313,20 @@ export function createGame() {
 
         ctx.restore();
 
-        // Interfejs przyklejony do ekranu
-        ctx.fillStyle = "rgba(232, 237, 244, 0.68)";
-        ctx.font = "16px system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(
-            "A / D: ruch  ·  Spacja / W: skok  ·  Shift: dash  ·  / : debug",
-            VIEW_WIDTH / 2,
-            28,
-        );
+        // Interfejs przyklejony do ekranu (podpowiedź tylko podczas gry)
+        if (hud) {
+            ctx.fillStyle = "rgba(232, 237, 244, 0.68)";
+            ctx.font = "16px system-ui, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(
+                "A / D: ruch  ·  Spacja / W: skok  ·  Shift: dash  ·  Esc: pauza  ·  / : debug",
+                VIEW_WIDTH / 2,
+                28,
+            );
+        }
 
         if (debug) drawDebugPanel(ctx, fps);
     }
 
-    return { player, camera, update, draw };
+    return { player, camera, update, draw, reset: respawn };
 }

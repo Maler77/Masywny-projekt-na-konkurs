@@ -18,8 +18,36 @@
 
         <section class="game" aria-labelledby="game-title">
             <h2 id="game-title" class="visually-hidden">Obszar gry</h2>
-            <button class="game__start" type="button">Rozpocznij grę</button>
             <canvas class="game__viewport" aria-label="Obszar gry 2D" role="img"></canvas>
+
+            <!-- Menu główne -->
+            <div class="menu" data-screen="main" role="dialog" aria-labelledby="menu-main-title">
+                <h3 id="menu-main-title" class="menu__title">Menu główne</h3>
+                <button class="menu__button menu__button--primary" type="button" data-action="start">Rozpocznij grę</button>
+                <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
+            </div>
+
+            <!-- Menu pauzy (Esc podczas gry) -->
+            <div class="menu" data-screen="pause" role="dialog" aria-labelledby="menu-pause-title" hidden>
+                <h3 id="menu-pause-title" class="menu__title">Pauza</h3>
+                <button class="menu__button menu__button--primary" type="button" data-action="resume">Wznów</button>
+                <button class="menu__button" type="button" data-action="fullscreen">Pełny ekran</button>
+                <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
+                <button class="menu__button" type="button" data-action="quit">Menu główne</button>
+            </div>
+
+            <!-- Ekran sterowania (z menu głównego i z pauzy) -->
+            <div class="menu" data-screen="controls" role="dialog" aria-labelledby="menu-controls-title" hidden>
+                <h3 id="menu-controls-title" class="menu__title">Sterowanie</h3>
+                <ul class="controls">
+                    <li><span><kbd>A</kbd> <kbd>D</kbd> lub <kbd>←</kbd> <kbd>→</kbd></span><span>ruch</span></li>
+                    <li><span><kbd>Spacja</kbd> <kbd>W</kbd> <kbd>↑</kbd></span><span>skok (przytrzymaj = wyżej)</span></li>
+                    <li><span><kbd>Shift</kbd></span><span>dash</span></li>
+                    <li><span><kbd>Esc</kbd></span><span>pauza</span></li>
+                    <li><span><kbd>/</kbd></span><span>tryb debug</span></li>
+                </ul>
+                <button class="menu__button menu__button--primary" type="button" data-action="back">Wróć</button>
+            </div>
         </section>
     </main>
 </body>

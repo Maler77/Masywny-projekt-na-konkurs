@@ -1,0 +1,68 @@
+// Menu w HTML: pokazuje i ukrywa ekrany (.menu[data-screen]) oraz obsługuje przyciski.
+// Przyciski z data-action="controls" i "back" obsługuje samo, resztę przekazuje do main.js.
+
+export function createMenu(actions) {
+    const screens = new Map(
+        [...document.querySelectorAll(".menu[data-screen]")].map((element) => [element.dataset.screen, element]),
+    );
+
+    let current = null;   // nazwa widocznego ekranu albo null, gdy menu jest ukryte
+    let origin = "main";  // dokąd wraca "Wróć" z ekranu sterowania
+
+    function show(name) {
+        // Zapamiętujemy, skąd otwarto sterowanie (z menu głównego czy z pauzy).
+        if (name === "controls" && current && current !== "controls") origin = current;
+
+        for (const [key, element] of screens) element.hidden = key !== name;
+        current = name;
+
+        // Fokus na pierwszym przycisku, żeby Enter działał od razu.
+        screens.get(name)?.querySelector("button")?.focus({ preventScroll: true });
+    }
+
+    function hide() {
+        for (const element of screens.values()) element.hidden = true;
+        current = null;
+    }
+
+    function back() {
+        show(origin);
+    }
+
+    // Kliknięcia w przyciski.
+    document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target?.closest("button[data-action]");
+        if (!button) return;
+
+        const action = button.dataset.action;
+        if (action === "controls") show("controls");
+        else if (action === "back") back();
+        else actions[action]?.();
+    });
+
+    // Strzałki góra/dół (oraz W/S) przesuwają zaznaczenie między przyciskami.
+    document.addEventListener("keydown", (event) => {
+        if (!current) return;
+
+        const step = ["ArrowDown", "KeyS"].includes(event.code) ? 1
+            : ["ArrowUp", "KeyW"].includes(event.code) ? -1
+            : 0;
+        if (step === 0) return;
+        event.preventDefault();
+
+        const buttons = [...screens.get(current).querySelectorAll("button")];
+        const index = buttons.indexOf(document.activeElement);
+        const next = index === -1
+            ? (step > 0 ? 0 : buttons.length - 1)
+            : (index + step + buttons.length) % buttons.length;
+        buttons[next].focus();
+    });
+
+    return {
+        show,
+        hide,
+        back,
+        get current() { return current; },
+    };
+}
