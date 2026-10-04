@@ -1,6 +1,7 @@
-// Stan i logika gry: gracz, fizyka, dash, platformy, kamera.
+// Stan i logika gry: gracz, fizyka, dash, platformy, tło, kamera.
 import { WORLD_WIDTH as VIEW_WIDTH, WORLD_HEIGHT as VIEW_HEIGHT } from "./viewport.js";
 import { createCamera } from "./camera.js";
+import { drawBackground, drawBox, drawTexture, getTextureReport } from "./textures.js";
 
 // Uwaga: VIEW_* to rozmiar ekranu (960 x 540), a LEVEL_* to rozmiar całego poziomu.
 const LEVEL_WIDTH = 2400;
@@ -14,37 +15,35 @@ const MOVE_SPEED = 280;      // prędkość biegu
 
 // Dash (Shift): krótki, szybki zryw w poziomie, bez grawitacji.
 const DASH_SPEED = 720;      // prędkość w trakcie dashu
-const DASH_TIME = 0.15;      // czas trwania dashu w sekundach (~108 jednostek dystansu)
+const DASH_TIME = 0.15;      // czas trwania dashu w sekundach
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
 
-// Wszystkie platformy są pełne (zderzasz się z nimi z każdej strony).
-// Pierwsza to podłoga na całą szerokość poziomu.
+// Tło: nazwy tekstur z textures.js rysowane od najdalszej do najbliższej.
+// Dla głębi dodaj kolejne warstwy, np. ["sky", "hills", "trees"].
+// Bez tekstur widać tylko gradient.
+const BACKGROUND_LAYERS = ["background"];
+
+// Platforma: pełny prostokąt. Tekstura jest w textures.js, color to kolor zastępczy.
+// Pierwsza platforma to podłoga na całą szerokość poziomu.
+const platform = (x, y, w, h, texture = "platform") => ({ x, y, w, h, texture, color: "#24343d" });
+
 const platforms = [
-    { x: 0, y: 480, w: LEVEL_WIDTH, h: 60 },
-    { x: 300, y: 400, w: 140, h: 20 },
-    { x: 520, y: 330, w: 140, h: 20 },
-    { x: 760, y: 260, w: 160, h: 20 },
-    { x: 1000, y: 360, w: 120, h: 20 },
-    { x: 1250, y: 300, w: 200, h: 20 },
-    { x: 1500, y: 220, w: 140, h: 20 },
-    { x: 1750, y: 320, w: 160, h: 20 },
-    { x: 2000, y: 400, w: 200, h: 20 },
-    { x: 1150, y: 420, w: 60, h: 60 }, // niski blok do wskakiwania
+    platform(0, 480, LEVEL_WIDTH, 60, "ground"),
+    platform(300, 400, 140, 20),
+    platform(520, 330, 140, 20),
+    platform(760, 260, 160, 20),
+    platform(1000, 360, 120, 20),
+    platform(1250, 300, 200, 20),
+    platform(1500, 220, 140, 20),
+    platform(1750, 320, 160, 20),
+    platform(2000, 400, 200, 20),
+    platform(1150, 420, 60, 60), // niski blok do wskakiwania
 ];
 
-// Wygląd gracza. Hitbox (40 x 40, patrz niżej) to to, z czym zderzasz się w grze,
-// a sprite to tylko obrazek narysowany na wierzchu, może być od niego większy.
-const PLAYER_SPRITE = {
-    src: "assets/player.png", // ścieżka względem index.html
-    width: 48,                // rozmiar rysowania obrazka w jednostkach świata
-    height: 48,
-    pixelArt: false,          // true = ostre piksele (bez wygładzania) dla pixel artu
-};
-
-// Obrazek ładuje się w tle. Dopóki się nie wczyta (lub gdy go brak), rysujemy kwadrat.
-const playerImage = new Image();
-playerImage.src = PLAYER_SPRITE.src;
+// Rozmiar rysowania obrazka gracza. Hitbox (player.w x player.h) to to, z czym zderzasz się
+// w grze, a obrazek to tylko grafika na wierzchu, może być od hitboxa większy.
+const PLAYER_SPRITE = { width: 48, height: 48 };
 
 // Czy dwa prostokąty na siebie nachodzą (kolizja AABB).
 function overlaps(a, b) {
@@ -65,6 +64,8 @@ export function createGame() {
         dashTime: 0,      // ile jeszcze trwa aktualny dash (0 = brak dashu)
         dashCooldown: 0,  // ile jeszcze do możliwości kolejnego dashu
         dashDir: 1,       // kierunek aktualnego dashu
+        texture: "player", // nazwa z textures.js
+        color: "#79d7c4",  // kolor zastępczy, gdy brak tekstury
     };
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
@@ -131,10 +132,10 @@ export function createGame() {
 
         // 5) Ruch w poziomie, potem kolizje w poziomie
         player.x += player.vx * dt;
-        for (const platform of platforms) {
-            if (!overlaps(player, platform)) continue;
-            if (player.vx > 0) player.x = platform.x - player.w;
-            else if (player.vx < 0) player.x = platform.x + platform.w;
+        for (const p of platforms) {
+            if (!overlaps(player, p)) continue;
+            if (player.vx > 0) player.x = p.x - player.w;
+            else if (player.vx < 0) player.x = p.x + p.w;
             player.dashTime = 0; // uderzenie w ścianę kończy dash
         }
         player.x = Math.max(0, Math.min(LEVEL_WIDTH - player.w, player.x));
@@ -142,13 +143,13 @@ export function createGame() {
         // 6) Ruch w pionie, potem kolizje w pionie
         player.y += player.vy * dt;
         player.onGround = false;
-        for (const platform of platforms) {
-            if (!overlaps(player, platform)) continue;
+        for (const p of platforms) {
+            if (!overlaps(player, p)) continue;
             if (player.vy > 0) {
-                player.y = platform.y - player.h; // lądowanie na platformie
+                player.y = p.y - player.h; // lądowanie na platformie
                 player.onGround = true;
             } else if (player.vy < 0) {
-                player.y = platform.y + platform.h; // uderzenie głową
+                player.y = p.y + p.h; // uderzenie głową
             }
             player.vy = 0;
         }
@@ -181,20 +182,17 @@ export function createGame() {
     }
 
     function drawPlayer(ctx, x, y, facing, alpha = 1) {
-        const imageReady = playerImage.complete && playerImage.naturalWidth > 0;
+        const { width, height } = PLAYER_SPRITE;
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        if (!imageReady) {
-            // Zapas: kwadrat, gdy brak obrazka.
-            ctx.fillStyle = "#79d7c4";
-            ctx.fillRect(x, y, player.w, player.h);
-        } else {
-            const { width, height, pixelArt } = PLAYER_SPRITE;
-            ctx.imageSmoothingEnabled = !pixelArt;
-            ctx.translate(x + player.w / 2, 0);
-            ctx.scale(facing, 1); // odbicie lustrzane, gdy idziesz w lewo
-            ctx.drawImage(playerImage, -width / 2, y + player.h - height, width, height);
+        ctx.translate(x + player.w / 2, 0);
+        ctx.scale(facing, 1); // odbicie lustrzane, gdy idziesz w lewo
+
+        const drawn = drawTexture(ctx, player.texture, -width / 2, y + player.h - height, width, height);
+        if (!drawn) {
+            ctx.fillStyle = player.color;
+            ctx.fillRect(-player.w / 2, y, player.w, player.h);
         }
         ctx.restore();
     }
@@ -243,6 +241,7 @@ export function createGame() {
             : player.dashCooldown > 0
                 ? `cooldown ${player.dashCooldown.toFixed(2)} s`
                 : "gotowy";
+        const tex = getTextureReport();
 
         const lines = [
             "DEBUG   ( / = wyłącz )",
@@ -253,6 +252,7 @@ export function createGame() {
             `dash: ${dash}`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `poziom: ${LEVEL_WIDTH}x${LEVEL_HEIGHT}   platform: ${platforms.length}`,
+            `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
         ];
 
         const lineHeight = 18;
@@ -269,12 +269,15 @@ export function createGame() {
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
     function draw(ctx, { debug = false, fps = 0, hud = true } = {}) {
-        // Tło na stałe przyklejone do ekranu (nie przesuwa się z kamerą).
+        // Tło przyklejone do ekranu: gradient jako baza, na nim warstwy z teksturami.
         const sky = ctx.createLinearGradient(0, 0, 0, VIEW_HEIGHT);
         sky.addColorStop(0, "#203748");
         sky.addColorStop(1, "#111a23");
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+        for (const layer of BACKGROUND_LAYERS) {
+            drawBackground(ctx, layer, camera.x, VIEW_WIDTH, VIEW_HEIGHT);
+        }
 
         // Wszystko poniżej jest rysowane we współrzędnych poziomu.
         ctx.save();
@@ -295,12 +298,13 @@ export function createGame() {
         }
         ctx.stroke();
 
-        // Platformy
+        // Platformy: teksturą, a bez niej kolorem z jasnym paskiem na górze.
         for (const p of platforms) {
-            ctx.fillStyle = "#24343d";
-            ctx.fillRect(p.x, p.y, p.w, p.h);
-            ctx.fillStyle = "#526b70";
-            ctx.fillRect(p.x, p.y, p.w, 3);
+            const textured = drawBox(ctx, p);
+            if (!textured) {
+                ctx.fillStyle = "#526b70";
+                ctx.fillRect(p.x, p.y, p.w, 3);
+            }
         }
 
         // Cienie po dashu, potem sam gracz

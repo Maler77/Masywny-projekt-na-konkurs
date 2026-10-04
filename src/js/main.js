@@ -47,32 +47,45 @@ function toggleFullscreen() {
     else enterFullscreen();
 }
 
-// ---------- Stan gry: "menu" | "playing" | "paused" ----------
+// ---------- Stan gry ----------
+// "landing" - ekran startowy na stronie
+// "menu"    - menu główne (pełny ekran, część gry)
+// "playing" - gra
+// "paused"  - pauza
 
-let state = "menu";
+let state = "landing";
 let debug = false; // tryb debug włączany klawiszem "/"
 
 const menu = createMenu({
-    start: startGame,
+    enter: enterGame,
+    play: startGame,
     resume: resumeGame,
     fullscreen: toggleFullscreen,
     quit: quitToMenu,
+    exit: exitGame,
 });
 
 function setState(next) {
     state = next;
 
-    // Poza menu główne gra zajmuje cały ekran (styl .game-started w CSS).
-    document.body.classList.toggle("game-started", next !== "menu");
+    // Poza ekranem startowym gra zajmuje całe okno (styl .game-fullscreen w CSS).
+    document.body.classList.toggle("game-fullscreen", next !== "landing");
     // Kursor jest ukryty tylko, gdy naprawdę grasz.
     document.body.classList.toggle("cursor-hidden", next === "playing");
 
     if (next === "playing") menu.hide();
-    else menu.show(next === "paused" ? "pause" : "main");
+    else menu.show({ landing: "landing", menu: "main", paused: "pause" }[next]);
 }
 
-function startGame() {
+// "Rozpocznij grę" na ekranie startowym: pełny ekran i menu główne.
+function enterGame() {
     enterFullscreen();
+    setState("menu");
+}
+
+// "Graj" w menu głównym: start poziomu od początku.
+function startGame() {
+    game.reset();
     setState("playing");
 }
 
@@ -84,10 +97,18 @@ function resumeGame() {
     if (state === "paused") setState("playing");
 }
 
+// "Menu główne" z pauzy: wracamy do menu, nadal w pełnym ekranie.
 function quitToMenu() {
-    exitFullscreen();
     game.reset();
     setState("menu");
+}
+
+// "Wyjdź" w menu głównym: strona nie może sama się zamknąć, więc wychodzimy z pełnego
+// ekranu i wracamy na ekran startowy.
+function exitGame() {
+    exitFullscreen();
+    game.reset();
+    setState("landing");
 }
 
 // Gra sama się zatrzymuje, gdy przełączysz kartę lub okno.
@@ -108,7 +129,7 @@ function onFullscreenChange() {
 document.addEventListener("fullscreenchange", onFullscreenChange);
 document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
-setState("menu");
+setState("landing");
 
 // ---------- Pętla gry ----------
 

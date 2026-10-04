@@ -106,12 +106,12 @@ kbd {
     font: .85em ui-monospace, Menlo, Consolas, monospace;
 }
 
-/* ---------- Tryb gry (pełny ekran) ---------- */
+/* ---------- Układ pełnoekranowy (menu główne, gra, pauza) ---------- */
 
-body.game-started { overflow: hidden; }
-body.game-started .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
-body.game-started .page__header { display: none; }
-body.game-started .game {
+body.game-fullscreen { overflow: hidden; }
+body.game-fullscreen .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
+body.game-fullscreen .page__header { display: none; }
+body.game-fullscreen .game {
     position: fixed;
     z-index: 10;
     inset: 0;
@@ -121,8 +121,8 @@ body.game-started .game {
     border: 0;
     border-radius: 0;
 }
-body.game-started .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
-body.game-started .menu { border-radius: 0; }
+body.game-fullscreen .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.game-fullscreen .menu { border-radius: 0; }
 
 /* Kursor jest ukryty tylko podczas samej gry (w menu i pauzie jest widoczny). */
 body.cursor-hidden .game { cursor: none; }

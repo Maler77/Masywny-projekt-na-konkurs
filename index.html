@@ -20,11 +20,17 @@
             <h2 id="game-title" class="visually-hidden">Obszar gry</h2>
             <canvas class="game__viewport" aria-label="Obszar gry 2D" role="img"></canvas>
 
-            <!-- Menu główne -->
-            <div class="menu" data-screen="main" role="dialog" aria-labelledby="menu-main-title">
-                <h3 id="menu-main-title" class="menu__title">Menu główne</h3>
-                <button class="menu__button menu__button--primary" type="button" data-action="start">Rozpocznij grę</button>
+            <!-- Ekran startowy (na stronie). Kliknięcie włącza pełny ekran i otwiera menu główne. -->
+            <div class="menu" data-screen="landing" role="dialog" aria-label="Start">
+                <button class="menu__button menu__button--primary" type="button" data-action="enter">Rozpocznij grę</button>
+            </div>
+
+            <!-- Menu główne (w pełnym ekranie, część gry) -->
+            <div class="menu" data-screen="main" role="dialog" aria-labelledby="menu-main-title" hidden>
+                <h3 id="menu-main-title" class="menu__title">Gra przeglądarkowa</h3>
+                <button class="menu__button menu__button--primary" type="button" data-action="play">Graj</button>
                 <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
+                <button class="menu__button" type="button" data-action="exit">Wyjdź</button>
             </div>
 
             <!-- Menu pauzy (Esc podczas gry) -->
