@@ -1,7 +1,8 @@
-// Stan i logika gry: gracz, fizyka, dash, platformy, tło, kamera.
+// Stan i logika gry: gracz, fizyka, dash, platformy, bomby, timer, tło, kamera.
 import { WORLD_WIDTH as VIEW_WIDTH, WORLD_HEIGHT as VIEW_HEIGHT } from "./viewport.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport } from "./textures.js";
+import { BOMBS, TIME_LIMIT } from "./bombs.js";
 
 // Uwaga: VIEW_* to rozmiar ekranu (960 x 540), a LEVEL_* to rozmiar całego poziomu.
 const LEVEL_WIDTH = 2400;
@@ -18,6 +19,10 @@ const DASH_SPEED = 720;      // prędkość w trakcie dashu
 const DASH_TIME = 0.15;      // czas trwania dashu w sekundach
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
+
+// Bomby (pozycje i pytania są w bombs.js).
+const BOMB_SIZE = 36;        // rozmiar bomby w jednostkach świata
+const INTERACT_RANGE = 70;   // odległość od środka bomby, w której działa klawisz E
 
 // Tło: nazwy tekstur z textures.js rysowane od najdalszej do najbliższej.
 // Dla głębi dodaj kolejne warstwy, np. ["sky", "hills", "trees"].
@@ -50,6 +55,12 @@ function overlaps(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+// Zamienia sekundy na tekst m:ss (zaokrąglone w górę, żeby 0:00 oznaczało koniec czasu).
+export function formatTime(seconds) {
+    const total = Math.ceil(Math.max(0, seconds));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
 export function createGame() {
     // Gracz: (x, y) to lewy górny róg, vx/vy to prędkość.
     const player = {
@@ -68,6 +79,17 @@ export function createGame() {
         color: "#79d7c4",  // kolor zastępczy, gdy brak tekstury
     };
 
+    // Bomby: dane z bombs.js + rozmiar, tekstura i stan rozbrojenia.
+    const bombs = BOMBS.map((data) => ({
+        ...data,
+        w: BOMB_SIZE,
+        h: BOMB_SIZE,
+        texture: "bomb",
+        defused: false,
+    }));
+
+    let timeLeft = TIME_LIMIT; // pozostały czas w sekundach
+
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
     let lastDt = 0; // do wyświetlania w trybie debug
@@ -81,8 +103,8 @@ export function createGame() {
     });
     camera.snapTo(player);
 
-    // Ustawia gracza na starcie i czyści jego stan (start gry, powrót do menu, wypadnięcie).
-    function respawn() {
+    // Ustawia gracza na starcie (po wypadnięciu poza poziom).
+    function respawnPlayer() {
         player.x = 100;
         player.y = 440;
         player.vx = 0;
@@ -95,9 +117,50 @@ export function createGame() {
         camera.snapTo(player);
     }
 
+    // Pełny reset: gracz, bomby i timer (start gry, powrót do menu).
+    function reset() {
+        respawnPlayer();
+        for (const bomb of bombs) {
+            bomb.defused = false;
+            bomb.texture = "bomb";
+        }
+        timeLeft = TIME_LIMIT;
+    }
+
+    // Odlicza czas. Wołane z update(), a także podczas okna z pytaniem (czas wtedy leci dalej).
+    function tickTimer(dt) {
+        timeLeft = Math.max(0, timeLeft - dt);
+    }
+
+    // Najbliższa nierozbrojona bomba w zasięgu interakcji albo null.
+    function nearbyBomb() {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        let best = null;
+        let bestDistance = INTERACT_RANGE;
+        for (const bomb of bombs) {
+            if (bomb.defused) continue;
+            const distance = Math.hypot(cx - (bomb.x + bomb.w / 2), cy - (bomb.y + bomb.h / 2));
+            if (distance <= bestDistance) {
+                best = bomb;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    function defuse(bomb) {
+        bomb.defused = true;
+        bomb.texture = "bombDefused";
+    }
+
+    const defusedCount = () => bombs.filter((bomb) => bomb.defused).length;
+    const allDefused = () => defusedCount() === bombs.length;
+
     // Aktualizacja logiki. dt = czas od poprzedniej klatki w sekundach.
     function update(dt, input) {
         lastDt = dt;
+        tickTimer(dt);
 
         // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
         player.dashCooldown = Math.max(0, player.dashCooldown - dt);
@@ -164,7 +227,7 @@ export function createGame() {
         }
 
         // 8) Zabezpieczenie: gdyby gracz wypadł poza poziom
-        if (player.y > LEVEL_HEIGHT + 300) respawn();
+        if (player.y > LEVEL_HEIGHT + 300) respawnPlayer();
 
         // 9) Kamera goni gracza
         camera.follow(player, dt);
@@ -197,6 +260,56 @@ export function createGame() {
         ctx.restore();
     }
 
+    // Bomba: teksturą, a bez niej prosty kształt (czarna kula z lontem, po rozbrojeniu zielona).
+    function drawBomb(ctx, bomb) {
+        if (drawBox(ctx, bomb)) return;
+
+        const cx = bomb.x + bomb.w / 2;
+        const cy = bomb.y + bomb.h / 2 + 3;
+        const radius = bomb.w / 2 - 3;
+
+        ctx.fillStyle = bomb.defused ? "#2e7d5b" : "#1a1a1f";
+        ctx.strokeStyle = bomb.defused ? "#7be0ae" : "#6b7480";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Lont
+        ctx.strokeStyle = "#c9a27a";
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - radius);
+        ctx.lineTo(cx + 8, cy - radius - 8);
+        ctx.stroke();
+
+        // Migająca iskra (tylko na nierozbrojonej bombie)
+        if (!bomb.defused && Math.floor(timeLeft * 3) % 2 === 0) {
+            ctx.fillStyle = "#ff7a3d";
+            ctx.beginPath();
+            ctx.arc(cx + 8, cy - radius - 8, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // Napis "E" nad bombą w zasięgu (w układzie poziomu).
+    function drawInteractPrompt(ctx) {
+        const bomb = nearbyBomb();
+        if (!bomb) return;
+
+        const text = "E: rozbrój";
+        ctx.font = "700 14px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        const width = ctx.measureText(text).width + 16;
+        const x = bomb.x + bomb.w / 2;
+        const y = bomb.y - 14;
+
+        ctx.fillStyle = "rgba(10, 15, 22, 0.8)";
+        ctx.fillRect(x - width / 2, y - 16, width, 24);
+        ctx.fillStyle = "#ffe08a";
+        ctx.fillText(text, x, y);
+    }
+
     // Debug w układzie poziomu: hitboxy i wektory.
     function drawDebugWorld(ctx) {
         ctx.lineWidth = 1.5;
@@ -208,6 +321,18 @@ export function createGame() {
         // Hitboxy platform
         ctx.strokeStyle = "rgba(255, 90, 90, 0.95)";
         for (const p of platforms) ctx.strokeRect(p.x, p.y, p.w, p.h);
+
+        // Bomby: hitbox (pomarańczowy) i zasięg interakcji (przerywany niebieski)
+        for (const bomb of bombs) {
+            ctx.strokeStyle = "rgba(255, 160, 60, 0.95)";
+            ctx.strokeRect(bomb.x, bomb.y, bomb.w, bomb.h);
+            ctx.strokeStyle = "rgba(90, 220, 255, 0.55)";
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.arc(bomb.x + bomb.w / 2, bomb.y + bomb.h / 2, INTERACT_RANGE, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
 
         // Obszar rysowania obrazka gracza (przerywana żółta)
         const s = spriteRect();
@@ -250,6 +375,7 @@ export function createGame() {
             `prędkość: vx=${player.vx.toFixed(0)}  vy=${player.vy.toFixed(0)}`,
             `onGround: ${player.onGround}   facing: ${player.facing}`,
             `dash: ${dash}`,
+            `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `poziom: ${LEVEL_WIDTH}x${LEVEL_HEIGHT}   platform: ${platforms.length}`,
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
@@ -257,7 +383,7 @@ export function createGame() {
 
         const lineHeight = 18;
         ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-        ctx.fillRect(10, 48, 320, lines.length * lineHeight + 14);
+        ctx.fillRect(10, 48, 360, lines.length * lineHeight + 14);
 
         ctx.fillStyle = "#d8ffe4";
         ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
@@ -265,6 +391,31 @@ export function createGame() {
         ctx.textBaseline = "top";
         lines.forEach((text, i) => ctx.fillText(text, 18, 56 + i * lineHeight));
         ctx.textBaseline = "alphabetic";
+    }
+
+    // Interfejs przyklejony do ekranu: podpowiedź ze sterowaniem, timer i licznik bomb.
+    function drawHud(ctx) {
+        ctx.fillStyle = "rgba(232, 237, 244, 0.68)";
+        ctx.font = "16px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(
+            "A / D: ruch  ·  Spacja: skok  ·  Shift: dash  ·  E: interakcja  ·  Esc: pauza  ·  / : debug",
+            VIEW_WIDTH / 2 - 60,
+            28,
+        );
+
+        // Timer i bomby w prawym górnym rogu
+        ctx.fillStyle = "rgba(10, 15, 22, 0.55)";
+        ctx.fillRect(VIEW_WIDTH - 150, 10, 140, 66);
+
+        ctx.textAlign = "right";
+        ctx.font = "700 30px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillStyle = timeLeft <= 10 ? "#ff6b6b" : "#e8edf4";
+        ctx.fillText(formatTime(timeLeft), VIEW_WIDTH - 20, 44);
+
+        ctx.font = "15px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(232, 237, 244, 0.85)";
+        ctx.fillText(`Bomby: ${defusedCount()}/${bombs.length}`, VIEW_WIDTH - 20, 66);
     }
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
@@ -307,30 +458,34 @@ export function createGame() {
             }
         }
 
+        // Bomby
+        for (const bomb of bombs) drawBomb(ctx, bomb);
+
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
             drawPlayer(ctx, g.x, g.y, g.facing, (g.life / GHOST_LIFE) * 0.45);
         }
         drawPlayer(ctx, player.x, player.y, player.facing);
 
+        if (hud) drawInteractPrompt(ctx);
         if (debug) drawDebugWorld(ctx);
 
         ctx.restore();
 
-        // Interfejs przyklejony do ekranu (podpowiedź tylko podczas gry)
-        if (hud) {
-            ctx.fillStyle = "rgba(232, 237, 244, 0.68)";
-            ctx.font = "16px system-ui, sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText(
-                "A / D: ruch  ·  Spacja / W: skok  ·  Shift: dash  ·  Esc: pauza  ·  / : debug",
-                VIEW_WIDTH / 2,
-                28,
-            );
-        }
-
+        if (hud) drawHud(ctx);
         if (debug) drawDebugPanel(ctx, fps);
     }
 
-    return { player, camera, update, draw, reset: respawn };
+    return {
+        player,
+        camera,
+        update,
+        draw,
+        reset,
+        tickTimer,
+        nearbyBomb,
+        defuse,
+        allDefused,
+        get timeLeft() { return timeLeft; },
+    };
 }

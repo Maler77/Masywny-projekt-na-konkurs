@@ -26,7 +26,7 @@
             </div>
 
             <!-- Menu główne (w pełnym ekranie, część gry) -->
-            <div class="menu" data-screen="main" role="dialog" aria-labelledby="menu-main-title" hidden>
+            <div class="menu" data-screen="main" data-texture="menuBackground" role="dialog" aria-labelledby="menu-main-title" hidden>
                 <h3 id="menu-main-title" class="menu__title">Gra przeglądarkowa</h3>
                 <button class="menu__button menu__button--primary" type="button" data-action="play">Graj</button>
                 <button class="menu__button" type="button" data-action="controls">Sterowanie</button>
@@ -49,10 +49,40 @@
                     <li><span><kbd>A</kbd> <kbd>D</kbd> lub <kbd>←</kbd> <kbd>→</kbd></span><span>ruch</span></li>
                     <li><span><kbd>Spacja</kbd> <kbd>W</kbd> <kbd>↑</kbd></span><span>skok (przytrzymaj = wyżej)</span></li>
                     <li><span><kbd>Shift</kbd></span><span>dash</span></li>
+                    <li><span><kbd>E</kbd></span><span>rozbrój bombę (stojąc obok niej)</span></li>
                     <li><span><kbd>Esc</kbd></span><span>pauza</span></li>
                     <li><span><kbd>/</kbd></span><span>tryb debug</span></li>
                 </ul>
                 <button class="menu__button menu__button--primary" type="button" data-action="back">Wróć</button>
+            </div>
+
+            <!-- Okno z pytaniem (E przy bombie). Tekst i odpowiedzi ustawia main.js na podstawie bombs.js -->
+            <div class="menu" data-screen="bomb" role="dialog" aria-labelledby="bomb-title" hidden>
+                <div class="bomb-panel" data-texture="bombPanel">
+                    <p class="bomb-panel__timer" id="bomb-timer"></p>
+                    <h3 class="bomb-panel__title" id="bomb-title"></h3>
+                    <div class="bomb-panel__options">
+                        <button class="menu__button bomb-panel__option" type="button" data-action="answer" data-index="0"></button>
+                        <button class="menu__button bomb-panel__option" type="button" data-action="answer" data-index="1"></button>
+                        <button class="menu__button bomb-panel__option" type="button" data-action="answer" data-index="2"></button>
+                    </div>
+                    <p class="menu__hint">Wybierz myszką lub klawiszami A, B, C. Esc wraca do gry (czas płynie dalej).</p>
+                </div>
+            </div>
+
+            <!-- Ekran przegranej -->
+            <div class="menu" data-screen="lose" data-texture="loseBackground" role="dialog" aria-labelledby="lose-title" hidden>
+                <h3 id="lose-title" class="menu__title menu__title--lose">Przegrana</h3>
+                <p class="menu__text" id="lose-reason"></p>
+                <button class="menu__button menu__button--primary" type="button" data-action="quit">Powrót do menu</button>
+            </div>
+
+            <!-- Ekran wygranej -->
+            <div class="menu" data-screen="win" data-texture="winBackground" role="dialog" aria-labelledby="win-title" hidden>
+                <h3 id="win-title" class="menu__title menu__title--win">Wygrana!</h3>
+                <p class="menu__text">Wszystkie bomby rozbrojone.</p>
+                <p class="menu__text" id="win-time"></p>
+                <button class="menu__button menu__button--primary" type="button" data-action="quit">Powrót do menu</button>
             </div>
         </section>
     </main>

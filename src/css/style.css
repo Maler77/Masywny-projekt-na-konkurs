@@ -106,6 +106,55 @@ kbd {
     font: .85em ui-monospace, Menlo, Consolas, monospace;
 }
 
+/* Tekstury elementów HTML: textures.js ustawia --texture dla elementów z data-texture.
+   Gdy tekstury nie ma, widać tło zastępcze z --fallback (definiowane przy każdym ekranie).
+   Ta reguła musi stać PO .menu, bo .menu resetuje tło skrótem "background". */
+[data-texture] {
+    background-image: var(--texture, none), var(--fallback, none);
+    background-size: var(--texture-size, cover), cover;
+    background-repeat: var(--texture-repeat, no-repeat), no-repeat;
+    background-position: center;
+}
+
+.menu__text { margin: 0 0 .5rem; max-width: 32rem; color: #cdd7e2; font-size: 1.1rem; text-align: center; }
+.menu__text:empty { display: none; }
+.menu__hint { margin: .25rem 0 0; color: #aab7c5; font-size: .85rem; }
+
+.menu__title--lose { color: #ff8a8a; }
+.menu__title--win { color: #8ff0c4; }
+
+/* Menu główne i ekrany końcowe mają własne, nieprzezroczyste tło (bez widocznej sceny gry). */
+.menu[data-screen="main"],
+.menu[data-screen="win"],
+.menu[data-screen="lose"] {
+    background-color: #0d1620;
+    backdrop-filter: none;
+}
+.menu[data-screen="main"] { --fallback: linear-gradient(160deg, #18304a 0%, #0d1620 55%, #15291f 100%); }
+.menu[data-screen="win"]  { --fallback: radial-gradient(circle at 50% 30%, #1f5a45, #0d1620 70%); }
+.menu[data-screen="lose"] { --fallback: radial-gradient(circle at 50% 30%, #5a1f2a, #0d1620 70%); }
+
+/* Okno z pytaniem: duża część ekranu, napis u góry, pod nim odpowiedzi. */
+.bomb-panel {
+    --fallback: linear-gradient(180deg, #1c2b3a, #131c26);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    width: min(100%, 56rem);
+    min-height: min(80%, 36rem);
+    padding: clamp(1rem, 3vw, 2.5rem);
+    border: 1px solid #435464;
+    border-radius: 1rem;
+    box-shadow: 0 1.5rem 4rem #0007;
+}
+
+.bomb-panel__timer { align-self: flex-end; margin: 0; color: #ffd27a; font: 700 1.1rem ui-monospace, Menlo, Consolas, monospace; }
+.bomb-panel__title { margin: 0; font-size: clamp(1.3rem, 3.2vw, 2.1rem); line-height: 1.25; }
+.bomb-panel__options { display: grid; gap: .85rem; }
+.bomb-panel .menu__hint { margin-top: auto; }
+
+.menu__button.bomb-panel__option { width: 100%; padding: 1.1rem 1.4rem; font-size: 1.15rem; text-align: left; }
+
 /* ---------- Układ pełnoekranowy (menu główne, gra, pauza) ---------- */
 
 body.game-fullscreen { overflow: hidden; }

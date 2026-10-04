@@ -38,7 +38,7 @@ export function createMenu(actions) {
         const action = button.dataset.action;
         if (action === "controls") show("controls");
         else if (action === "back") back();
-        else actions[action]?.();
+        else actions[action]?.(button.dataset);
     });
 
     // Strzałki góra/dół (oraz W/S) przesuwają zaznaczenie między przyciskami.

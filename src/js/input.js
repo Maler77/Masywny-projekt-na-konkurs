@@ -1,5 +1,5 @@
 // Obsługa klawiatury. Pamięta, które klawisze są wciśnięte
-// oraz które zostały wciśnięte dokładnie w tej klatce (skok, dash, debug, pauza).
+// oraz które zostały wciśnięte dokładnie w tej klatce (skok, dash, debug, pauza, interakcja).
 
 const LEFT = ["ArrowLeft", "KeyA"];
 const RIGHT = ["ArrowRight", "KeyD"];
@@ -7,6 +7,9 @@ const JUMP = ["Space", "ArrowUp", "KeyW"];
 const DASH = ["ShiftLeft", "ShiftRight"];
 const DEBUG = ["Slash"];
 const PAUSE = ["Escape"];
+const INTERACT = ["KeyE"];
+// Odpowiedzi w oknie bomby: litery A, B, C (albo cyfry 1, 2, 3).
+const ANSWERS = [["KeyA", "Digit1"], ["KeyB", "Digit2"], ["KeyC", "Digit3"]];
 
 // Klawisze, którym blokujemy domyślne działanie (strzałki i spacja przewijają stronę,
 // a "/" w Firefoksie otwiera szybkie wyszukiwanie).
@@ -54,6 +57,10 @@ export function createInput() {
         debugPressed: () => any(DEBUG, pressed),
         // Czy Esc został dopiero co wciśnięty (pauza / wznowienie / powrót).
         escapePressed: () => any(PAUSE, pressed),
+        // Czy E został dopiero co wciśnięty (interakcja z bombą).
+        interactPressed: () => any(INTERACT, pressed),
+        // Indeks odpowiedzi (0 = A, 1 = B, 2 = C) wciśniętej w tej klatce albo -1.
+        answerPressed: () => ANSWERS.findIndex((codes) => any(codes, pressed)),
         // Wołane raz na koniec każdej klatki z main.js.
         endFrame: () => pressed.clear(),
         destroy() {
