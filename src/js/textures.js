@@ -40,6 +40,10 @@ export const TEXTURES = {
     background: { src: null, parallax: 0.3 }, // poziom 1, np. "assets/background.png"
     background2: { src: null, parallax: 0.3 }, // poziom 2
     background3: { src: null, parallax: 0.3 }, // poziom 3
+    background4: { src: null, parallax: 0.3 }, // poziom 4 (tło przesuwa się tylko poziomo)
+
+    // Ściany szybu (poziom 4): wysokie, pionowe platformy.
+    wall: { src: null, mode: "tile", tileWidth: 60, tileHeight: 60 }, // np. "assets/wall.png"
 
     // Bomby w świecie gry (36 x 36). bombDefused to bomba po rozbrojeniu.
     bomb: { src: null },         // np. "assets/bomb.png"
@@ -51,6 +55,7 @@ export const TEXTURES = {
     level1Thumbnail: { src: null, mode: "cover" }, // miniatury poziomów w menu głównym
     level2Thumbnail: { src: null, mode: "cover" },
     level3Thumbnail: { src: null, mode: "cover" },
+    level4Thumbnail: { src: null, mode: "cover" },
     winBackground: { src: null, mode: "cover" },  // ekran wygranej
     loseBackground: { src: null, mode: "cover" }, // ekran przegranej
 };

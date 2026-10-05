@@ -16,16 +16,26 @@
 //    bombs       lista bomb z pytaniami (patrz funkcja bomb() niżej)
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu)
-//    do góry ok. 107, w poziomie ok. 190 (z dashem więcej).
+//    do góry ok. 107, w poziomie ok. 190-230 (z dashem do ok. 385).
 //    Bezpiecznie: różnica wysokości do 80 i odstęp między platformami do 100-120.
+//    Odstęp ok. 300 na tej samej wysokości jest możliwy TYLKO z dashem.
+//
+//  WALL-JUMP (Spacja przy ścianie w powietrzu)
+//    Ścianą jest każda platforma sięgająca przy graczu co najmniej 30 jednostek (cienkie
+//    półki 20 nie są ścianami). Odbicie od ściany z jednej strony odblokowuje się dopiero
+//    po odbiciu od ściany z przeciwnej strony albo po lądowaniu, więc po jednej ścianie
+//    nie da się wspinać, a w szybie (dwie ściany naprzeciw siebie) tak.
+//    Szyb szeroki na 160 (odstęp między ścianami) jest wygodny. Powyżej ok. 200 robi się
+//    bardzo trudny, a ok. 240 niemożliwy.
 // ============================================================================
 
 // Platforma: pełny prostokąt (x, y = lewy górny róg). Domyślna wysokość to 20.
 // texture to nazwa z textures.js, color to kolor zastępczy bez tekstury.
 export const platform = (x, y, w, h = 20, texture = "platform") => ({ x, y, w, h, texture, color: "#24343d" });
 
-// Podłoga na całą szerokość poziomu (górna krawędź na y = 480).
-export const ground = (width) => platform(0, 480, width, 60, "ground");
+// Podłoga na całą szerokość poziomu, na samym dole (górna krawędź 60 nad dołem poziomu).
+// Dla poziomu wyższego niż ekran podaj jego wysokość: ground(2200, 1500).
+export const ground = (width, levelHeight = 540) => platform(0, levelHeight - 60, width, 60, "ground");
 
 const LETTERS = ["A", "B", "C"];
 
@@ -140,6 +150,37 @@ export const LEVELS = [
             bomb(1802, 324, 1),
             bomb(2682, 154, 2),
             bomb(3402, 264, 1),
+        ],
+    },
+    {
+        name: "Poziom 4",
+        subtitle: "Szyb i dash",
+        thumbnail: "level4Thumbnail",
+        background: ["background4"],
+        timeLimit: 120,
+        width: 2200,
+        height: 1500, // wyższy niż ekran: kamera podąża za graczem w pionie
+        spawn: { x: 100, y: 1400 },
+        platforms: [
+            ground(2200, 1500),
+            // bomba na rozgrzewkę, zwykły skok
+            platform(380, 1360, 160),
+            // SZYB: dwie ściany naprzeciw siebie (odstęp 160), wspinaczka odbijaniem się od nich.
+            // Lewa ściana kończy się 100 nad podłogą: pod nią wchodzi się do szybu.
+            platform(760, 600, 60, 740, "wall"),
+            platform(980, 600, 60, 840, "wall"),
+            // półka na szczycie szybu
+            platform(1040, 600, 260),
+            // SKOK Z DASHEM: odstęp 300 (bez dasha da się maks. ok. 230)
+            platform(1600, 600, 200),
+            // koniec poziomu: zwykły skok w górę
+            platform(1900, 520, 200),
+        ],
+        bombs: [
+            bomb(442, 1324, 1),
+            bomb(1140, 564, 2),
+            bomb(1682, 564, 0),
+            bomb(1982, 484, 1),
         ],
     },
 ];

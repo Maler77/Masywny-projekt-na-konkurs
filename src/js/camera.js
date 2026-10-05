@@ -1,8 +1,17 @@
 // Kamera: przesuwa "okno" (960 x 540) po większym poziomie i płynnie goni gracza.
 
-export function createCamera({ viewWidth, viewHeight, levelWidth, levelHeight, smoothing = 6 }) {
-    // smoothing: im większa wartość, tym szybciej kamera dogania gracza
-    // (np. 3 = leniwa i miękka, 12 = prawie sztywna).
+export function createCamera({
+    viewWidth,
+    viewHeight,
+    levelWidth,
+    levelHeight,
+    smoothing = 6,   // poziomo: im większa wartość, tym szybciej kamera dogania gracza
+    smoothingY = 8,  // pionowo (trochę szybciej, żeby nie zgubić gracza przy szybkim spadaniu)
+    deadZoneY = 90,  // pionowo: o ile gracz może odejść od środka ekranu, zanim kamera ruszy
+}) {
+    // Poziomo kamera zawsze dąży do gracza. Pionowo ma "strefę martwą": drobne skoki
+    // (np. po płaskim terenie) nie bujają obrazem, a kamera przesuwa się dopiero, gdy gracz
+    // wejdzie wyraźnie wyżej lub niżej. W niskich poziomach (wysokość = ekran) nie rusza się wcale.
 
     // Kamera nie wychodzi poza krawędzie poziomu.
     const clampX = (value) => Math.max(0, Math.min(levelWidth - viewWidth, value));
@@ -32,9 +41,14 @@ export function createCamera({ viewWidth, viewHeight, levelWidth, levelHeight, s
         follow(target, dt) {
             // Wygładzanie niezależne od liczby klatek na sekundę:
             // przy 60 i 144 FPS kamera zachowuje się tak samo.
-            const t = 1 - Math.exp(-smoothing * dt);
-            camera.x += (targetX(target) - camera.x) * t;
-            camera.y += (targetY(target) - camera.y) * t;
+            camera.x += (targetX(target) - camera.x) * (1 - Math.exp(-smoothing * dt));
+
+            // Pion: gdzie kamera musiałaby być, żeby gracz był na brzegu strefy martwej.
+            const offset = target.y + target.h / 2 - (camera.y + viewHeight / 2);
+            let wantedY = camera.y;
+            if (offset > deadZoneY) wantedY = camera.y + (offset - deadZoneY);
+            else if (offset < -deadZoneY) wantedY = camera.y + (offset + deadZoneY);
+            camera.y += (clampY(wantedY) - camera.y) * (1 - Math.exp(-smoothingY * dt));
         },
 
         // Przesuwa układ współrzędnych rysowania: wszystko narysowane po tym

@@ -152,7 +152,7 @@ kbd {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
     gap: .9rem;
-    width: min(100%, 46rem);
+    width: min(100%, 48rem);
 }
 
 .menu__button.level-card {

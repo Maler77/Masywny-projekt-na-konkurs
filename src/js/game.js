@@ -16,6 +16,17 @@ const DASH_TIME = 0.15;      // czas trwania dashu w sekundach
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
 
+// Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
+// Reguła: po odbiciu od ściany z jednej strony następne odbicie jest możliwe dopiero od ściany
+// z PRZECIWNEJ strony albo po lądowaniu. Dlatego po jednej ścianie nie da się wspinać,
+// ale między dwiema ścianami naprzeciw siebie (szyb) już tak.
+const WALL_JUMP_SPEED = 600;  // prędkość pionowa odbicia
+const WALL_KICK_SPEED = 300;  // prędkość pozioma odbicia (od ściany)
+const WALL_LOCK_TIME = 0.14;  // tyle czasu sterowanie poziome jest zablokowane, żeby odbicie "wyszło" od ściany
+const WALL_SLIDE_SPEED = 120; // maksymalna prędkość zsuwania się, gdy trzymasz kierunek w stronę ściany
+const WALL_MIN_OVERLAP = 30;  // ściana musi sięgać co najmniej tyle przy graczu (cienkie platformy to nie ściany)
+const JUMP_BUFFER = 0.1;      // skok wciśnięty chwilę za wcześnie (przed lądowaniem/ścianą) nadal się liczy
+
 // Bomby (pozycje i pytania są w levels.js).
 const BOMB_SIZE = 36;        // rozmiar bomby w jednostkach świata
 const INTERACT_RANGE = 70;   // odległość od środka bomby, w której działa klawisz E
@@ -49,6 +60,11 @@ export function createGame(initialLevel) {
         dashTime: 0,      // ile jeszcze trwa aktualny dash (0 = brak dashu)
         dashCooldown: 0,  // ile jeszcze do możliwości kolejnego dashu
         dashDir: 1,       // kierunek aktualnego dashu
+        wallDir: 0,            // ściana przy graczu: -1 po lewej, 1 po prawej, 0 brak
+        lastWallJumpSide: 0,   // strona ostatniego odbicia od ściany (0 po lądowaniu)
+        wallLockTime: 0,       // ile jeszcze sterowanie poziome jest zablokowane po odbiciu
+        jumpBuffer: 0,         // ile jeszcze liczy się wcześniej wciśnięty skok
+        canCutJump: false,     // czy puszczenie klawisza skróci skok (tylko skok z ziemi)
         texture: "player", // nazwa z textures.js
         color: "#79d7c4",  // kolor zastępczy, gdy brak tekstury
     };
@@ -106,6 +122,11 @@ export function createGame(initialLevel) {
         player.facing = 1;
         player.dashTime = 0;
         player.dashCooldown = 0;
+        player.wallDir = 0;
+        player.lastWallJumpSide = 0;
+        player.wallLockTime = 0;
+        player.jumpBuffer = 0;
+        player.canCutJump = false;
         ghosts.length = 0;
         camera.snapTo(player);
     }
@@ -150,19 +171,37 @@ export function createGame(initialLevel) {
     const defusedCount = () => bombs.filter((bomb) => bomb.defused).length;
     const allDefused = () => defusedCount() === bombs.length;
 
+    // Czy po stronie dir (-1 lewo, 1 prawo) przylega ściana. Ścianą jest platforma, która sięga
+    // przy graczu na co najmniej WALL_MIN_OVERLAP (cienka półka nie liczy się jako ściana).
+    function touchingWall(dir) {
+        const probe = { x: dir < 0 ? player.x - 1 : player.x + player.w, y: player.y, w: 1, h: player.h };
+        for (const p of platforms) {
+            if (!overlaps(probe, p)) continue;
+            const reach = Math.min(player.y + player.h, p.y + p.h) - Math.max(player.y, p.y);
+            if (reach >= WALL_MIN_OVERLAP) return true;
+        }
+        return false;
+    }
+
     // Aktualizacja logiki. dt = czas od poprzedniej klatki w sekundach.
     function update(dt, input) {
         lastDt = dt;
         tickTimer(dt);
 
-        // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
+        // Liczniki czasu
         player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+        player.wallLockTime = Math.max(0, player.wallLockTime - dt);
+        player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
+        if (input.jumpPressed()) player.jumpBuffer = JUMP_BUFFER;
+
+        // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
         if (input.dashPressed() && player.dashTime <= 0 && player.dashCooldown <= 0) {
             // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
             player.dashDir = input.moveX() || player.facing;
             player.facing = player.dashDir;
             player.dashTime = DASH_TIME;
             player.dashCooldown = DASH_COOLDOWN;
+            player.wallLockTime = 0;
         }
 
         if (player.dashTime > 0) {
@@ -171,22 +210,39 @@ export function createGame(initialLevel) {
             player.vx = player.dashDir * DASH_SPEED;
             player.vy = 0;
         } else {
-            // 2) Ruch poziomy
-            player.vx = input.moveX() * MOVE_SPEED;
+            // 2) Ruch poziomy (na chwilę zablokowany po odbiciu od ściany)
+            if (player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
             if (player.vx !== 0) player.facing = Math.sign(player.vx);
 
-            // 3) Skok: tylko z ziemi i tylko przy świeżym wciśnięciu klawisza
-            if (input.jumpPressed() && player.onGround) {
-                player.vy = -JUMP_SPEED;
+            // 3) Skok z ziemi albo odbicie od ściany
+            if (player.jumpBuffer > 0) {
+                if (player.onGround) {
+                    player.vy = -JUMP_SPEED;
+                    player.canCutJump = true;
+                    player.jumpBuffer = 0;
+                } else if (player.wallDir !== 0 && player.wallDir !== player.lastWallJumpSide) {
+                    player.vy = -WALL_JUMP_SPEED;
+                    player.vx = -player.wallDir * WALL_KICK_SPEED; // odbicie od ściany
+                    player.facing = -player.wallDir;
+                    player.wallLockTime = WALL_LOCK_TIME;
+                    player.lastWallJumpSide = player.wallDir;
+                    player.canCutJump = false;
+                    player.jumpBuffer = 0;
+                }
             }
 
-            // 4) Grawitacja. Gdy puścisz skok w trakcie wznoszenia, grawitacja
-            //    jest silniejsza, więc skok jest niższy (krótkie vs długie naciśnięcie).
-            const gravityScale = player.vy < 0 && !input.jumpHeld() ? 2.5 : 1;
-            player.vy = Math.min(player.vy + GRAVITY * gravityScale * dt, MAX_FALL_SPEED);
+            // 4) Grawitacja. Gdy puścisz skok z ziemi w trakcie wznoszenia, grawitacja jest
+            //    silniejsza, więc skok jest niższy (krótkie vs długie naciśnięcie).
+            const cutJump = player.canCutJump && player.vy < 0 && !input.jumpHeld();
+            player.vy = Math.min(player.vy + GRAVITY * (cutJump ? 2.5 : 1) * dt, MAX_FALL_SPEED);
+
+            // 5) Zsuwanie po ścianie: wolniejsze spadanie, gdy trzymasz kierunek w stronę ściany
+            if (!player.onGround && player.wallDir !== 0 && input.moveX() === player.wallDir) {
+                player.vy = Math.min(player.vy, WALL_SLIDE_SPEED);
+            }
         }
 
-        // 5) Ruch w poziomie, potem kolizje w poziomie
+        // 6) Ruch w poziomie, potem kolizje w poziomie
         player.x += player.vx * dt;
         for (const p of platforms) {
             if (!overlaps(player, p)) continue;
@@ -196,7 +252,7 @@ export function createGame(initialLevel) {
         }
         player.x = Math.max(0, Math.min(levelWidth - player.w, player.x));
 
-        // 6) Ruch w pionie, potem kolizje w pionie
+        // 7) Ruch w pionie, potem kolizje w pionie
         player.y += player.vy * dt;
         player.onGround = false;
         for (const p of platforms) {
@@ -210,7 +266,13 @@ export function createGame(initialLevel) {
             player.vy = 0;
         }
 
-        // 7) Cienie dashu: stare znikają, w trakcie dashu dochodzą nowe
+        // 8) Kontakt ze ścianą (do odbicia w następnej klatce); lądowanie odnawia odbicia
+        if (player.onGround) player.lastWallJumpSide = 0;
+        const left = touchingWall(-1);
+        const right = touchingWall(1);
+        player.wallDir = left && right ? (input.moveX() || player.facing) : left ? -1 : right ? 1 : 0;
+
+        // 9) Cienie dashu: stare znikają, w trakcie dashu dochodzą nowe
         for (let i = ghosts.length - 1; i >= 0; i--) {
             ghosts[i].life -= dt;
             if (ghosts[i].life <= 0) ghosts.splice(i, 1);
@@ -219,10 +281,10 @@ export function createGame(initialLevel) {
             ghosts.push({ x: player.x, y: player.y, facing: player.facing, life: GHOST_LIFE });
         }
 
-        // 8) Zabezpieczenie: gdyby gracz wypadł poza poziom
+        // 10) Zabezpieczenie: gdyby gracz wypadł poza poziom
         if (player.y > levelHeight + 300) respawnPlayer();
 
-        // 9) Kamera goni gracza
+        // 11) Kamera goni gracza (pionowo ze strefą martwą)
         camera.follow(player, dt);
     }
 
@@ -350,6 +412,12 @@ export function createGame(initialLevel) {
         // Znacznik kontaktu z podłożem: zielony = stoi, czerwony = w powietrzu
         ctx.fillStyle = player.onGround ? "#3cff7a" : "#ff5a5a";
         ctx.fillRect(player.x, player.y + player.h - 3, player.w, 3);
+
+        // Znacznik ściany: niebieski pasek po stronie ściany (żółty, gdy odbicie od niej jest zablokowane)
+        if (player.wallDir !== 0) {
+            ctx.fillStyle = player.wallDir === player.lastWallJumpSide ? "#ffd23c" : "#4db8ff";
+            ctx.fillRect(player.wallDir < 0 ? player.x : player.x + player.w - 3, player.y, 3, player.h);
+        }
     }
 
     // Debug w układzie ekranu: panel z liczbami.
@@ -368,6 +436,7 @@ export function createGame(initialLevel) {
             `prędkość: vx=${player.vx.toFixed(0)}  vy=${player.vy.toFixed(0)}`,
             `onGround: ${player.onGround}   facing: ${player.facing}`,
             `dash: ${dash}`,
+            `ściana: ${player.wallDir}  ostatnie odbicie: ${player.lastWallJumpSide}  blokada: ${player.wallLockTime.toFixed(2)}`,
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `${level.name}: ${levelWidth}x${levelHeight}   platform: ${platforms.length}`,
