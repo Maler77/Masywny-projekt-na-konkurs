@@ -17,7 +17,12 @@ export function createMenu(actions) {
         current = name;
 
         // Fokus na pierwszym przycisku, żeby Enter działał od razu.
-        screens.get(name)?.querySelector("button")?.focus({ preventScroll: true });
+        visibleButtons(name)[0]?.focus({ preventScroll: true });
+    }
+
+    // Przyciski ekranu, które są teraz widoczne (część może mieć atrybut hidden).
+    function visibleButtons(name) {
+        return [...(screens.get(name)?.querySelectorAll("button") ?? [])].filter((button) => !button.hidden);
     }
 
     function hide() {
@@ -51,7 +56,8 @@ export function createMenu(actions) {
         if (step === 0) return;
         event.preventDefault();
 
-        const buttons = [...screens.get(current).querySelectorAll("button")];
+        const buttons = visibleButtons(current);
+        if (buttons.length === 0) return;
         const index = buttons.indexOf(document.activeElement);
         const next = index === -1
             ? (step > 0 ? 0 : buttons.length - 1)

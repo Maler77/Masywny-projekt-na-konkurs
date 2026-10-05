@@ -1,12 +1,8 @@
-// Stan i logika gry: gracz, fizyka, dash, platformy, bomby, timer, tło, kamera.
+// Stan i logika gry: gracz, fizyka, dash, bomby, timer, tło, kamera.
+// Układ poziomu (platformy, bomby, czas) pochodzi z levels.js i jest wczytywany przez loadLevel().
 import { WORLD_WIDTH as VIEW_WIDTH, WORLD_HEIGHT as VIEW_HEIGHT } from "./viewport.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport } from "./textures.js";
-import { BOMBS, TIME_LIMIT } from "./bombs.js";
-
-// Uwaga: VIEW_* to rozmiar ekranu (960 x 540), a LEVEL_* to rozmiar całego poziomu.
-const LEVEL_WIDTH = 2400;
-const LEVEL_HEIGHT = VIEW_HEIGHT;
 
 // Fizyka (jednostki świata na sekundę).
 const GRAVITY = 1800;        // przyspieszenie w dół
@@ -20,31 +16,9 @@ const DASH_TIME = 0.15;      // czas trwania dashu w sekundach
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
 
-// Bomby (pozycje i pytania są w bombs.js).
+// Bomby (pozycje i pytania są w levels.js).
 const BOMB_SIZE = 36;        // rozmiar bomby w jednostkach świata
 const INTERACT_RANGE = 70;   // odległość od środka bomby, w której działa klawisz E
-
-// Tło: nazwy tekstur z textures.js rysowane od najdalszej do najbliższej.
-// Dla głębi dodaj kolejne warstwy, np. ["sky", "hills", "trees"].
-// Bez tekstur widać tylko gradient.
-const BACKGROUND_LAYERS = ["background"];
-
-// Platforma: pełny prostokąt. Tekstura jest w textures.js, color to kolor zastępczy.
-// Pierwsza platforma to podłoga na całą szerokość poziomu.
-const platform = (x, y, w, h, texture = "platform") => ({ x, y, w, h, texture, color: "#24343d" });
-
-const platforms = [
-    platform(0, 480, LEVEL_WIDTH, 60, "ground"),
-    platform(300, 400, 140, 20),
-    platform(520, 330, 140, 20),
-    platform(760, 260, 160, 20),
-    platform(1000, 360, 120, 20),
-    platform(1250, 300, 200, 20),
-    platform(1500, 220, 140, 20),
-    platform(1750, 320, 160, 20),
-    platform(2000, 400, 200, 20),
-    platform(1150, 420, 60, 60), // niski blok do wskakiwania
-];
 
 // Rozmiar rysowania obrazka gracza. Hitbox (player.w x player.h) to to, z czym zderzasz się
 // w grze, a obrazek to tylko grafika na wierzchu, może być od hitboxa większy.
@@ -61,13 +35,13 @@ export function formatTime(seconds) {
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function createGame() {
+export function createGame(initialLevel) {
     // Gracz: (x, y) to lewy górny róg, vx/vy to prędkość.
     const player = {
         w: 40,
         h: 40,
-        x: 100,
-        y: 440,
+        x: 0,
+        y: 0,
         vx: 0,
         vy: 0,
         onGround: false,
@@ -79,16 +53,16 @@ export function createGame() {
         color: "#79d7c4",  // kolor zastępczy, gdy brak tekstury
     };
 
-    // Bomby: dane z bombs.js + rozmiar, tekstura i stan rozbrojenia.
-    const bombs = BOMBS.map((data) => ({
-        ...data,
-        w: BOMB_SIZE,
-        h: BOMB_SIZE,
-        texture: "bomb",
-        defused: false,
-    }));
-
-    let timeLeft = TIME_LIMIT; // pozostały czas w sekundach
+    // Dane aktualnego poziomu (ustawiane w loadLevel).
+    let level = initialLevel;
+    let platforms = [];
+    let bombs = [];
+    let backgroundLayers = [];
+    let levelWidth = VIEW_WIDTH;
+    let levelHeight = VIEW_HEIGHT;
+    let timeLimit = 60;
+    let timeLeft = 60; // pozostały czas w sekundach
+    let spawn = { x: 100, y: 440 };
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
@@ -97,16 +71,35 @@ export function createGame() {
     const camera = createCamera({
         viewWidth: VIEW_WIDTH,
         viewHeight: VIEW_HEIGHT,
-        levelWidth: LEVEL_WIDTH,
-        levelHeight: LEVEL_HEIGHT,
+        levelWidth,
+        levelHeight,
         smoothing: 6,
     });
-    camera.snapTo(player);
 
-    // Ustawia gracza na starcie (po wypadnięciu poza poziom).
+    // Wczytuje poziom z levels.js i ustawia grę od początku.
+    function loadLevel(next) {
+        level = next;
+        platforms = next.platforms;
+        backgroundLayers = next.background ?? ["background"];
+        levelWidth = next.width;
+        levelHeight = next.height ?? VIEW_HEIGHT;
+        timeLimit = next.timeLimit;
+        spawn = next.spawn ?? { x: 100, y: 440 };
+        bombs = next.bombs.map((data) => ({
+            ...data,
+            w: BOMB_SIZE,
+            h: BOMB_SIZE,
+            texture: "bomb",
+            defused: false,
+        }));
+        camera.setLevelSize(levelWidth, levelHeight);
+        reset();
+    }
+
+    // Ustawia gracza na starcie poziomu (też po wypadnięciu poza poziom).
     function respawnPlayer() {
-        player.x = 100;
-        player.y = 440;
+        player.x = spawn.x;
+        player.y = spawn.y;
         player.vx = 0;
         player.vy = 0;
         player.onGround = false;
@@ -117,14 +110,14 @@ export function createGame() {
         camera.snapTo(player);
     }
 
-    // Pełny reset: gracz, bomby i timer (start gry, powrót do menu).
+    // Pełny reset aktualnego poziomu: gracz, bomby i timer.
     function reset() {
         respawnPlayer();
         for (const bomb of bombs) {
             bomb.defused = false;
             bomb.texture = "bomb";
         }
-        timeLeft = TIME_LIMIT;
+        timeLeft = timeLimit;
     }
 
     // Odlicza czas. Wołane z update(), a także podczas okna z pytaniem (czas wtedy leci dalej).
@@ -201,7 +194,7 @@ export function createGame() {
             else if (player.vx < 0) player.x = p.x + p.w;
             player.dashTime = 0; // uderzenie w ścianę kończy dash
         }
-        player.x = Math.max(0, Math.min(LEVEL_WIDTH - player.w, player.x));
+        player.x = Math.max(0, Math.min(levelWidth - player.w, player.x));
 
         // 6) Ruch w pionie, potem kolizje w pionie
         player.y += player.vy * dt;
@@ -227,7 +220,7 @@ export function createGame() {
         }
 
         // 8) Zabezpieczenie: gdyby gracz wypadł poza poziom
-        if (player.y > LEVEL_HEIGHT + 300) respawnPlayer();
+        if (player.y > levelHeight + 300) respawnPlayer();
 
         // 9) Kamera goni gracza
         camera.follow(player, dt);
@@ -316,7 +309,7 @@ export function createGame() {
 
         // Granice poziomu
         ctx.strokeStyle = "rgba(255, 0, 255, 0.6)";
-        ctx.strokeRect(0, 0, LEVEL_WIDTH, LEVEL_HEIGHT);
+        ctx.strokeRect(0, 0, levelWidth, levelHeight);
 
         // Hitboxy platform
         ctx.strokeStyle = "rgba(255, 90, 90, 0.95)";
@@ -377,7 +370,7 @@ export function createGame() {
             `dash: ${dash}`,
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
-            `poziom: ${LEVEL_WIDTH}x${LEVEL_HEIGHT}   platform: ${platforms.length}`,
+            `${level.name}: ${levelWidth}x${levelHeight}   platform: ${platforms.length}`,
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
         ];
 
@@ -393,16 +386,13 @@ export function createGame() {
         ctx.textBaseline = "alphabetic";
     }
 
-    // Interfejs przyklejony do ekranu: podpowiedź ze sterowaniem, timer i licznik bomb.
+    // Interfejs przyklejony do ekranu: nazwa poziomu, timer i licznik bomb.
+    // (Podpowiedź ze sterowaniem jest w rogu ekranu, w HTML.)
     function drawHud(ctx) {
-        ctx.fillStyle = "rgba(232, 237, 244, 0.68)";
-        ctx.font = "16px system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(
-            "A / D: ruch  ·  Spacja: skok  ·  Shift: dash  ·  E: interakcja  ·  Esc: pauza  ·  / : debug",
-            VIEW_WIDTH / 2 - 60,
-            28,
-        );
+        ctx.textAlign = "left";
+        ctx.font = "700 16px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(232, 237, 244, 0.8)";
+        ctx.fillText(level.name, 20, 30);
 
         // Timer i bomby w prawym górnym rogu
         ctx.fillStyle = "rgba(10, 15, 22, 0.55)";
@@ -426,7 +416,7 @@ export function createGame() {
         sky.addColorStop(1, "#111a23");
         ctx.fillStyle = sky;
         ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
-        for (const layer of BACKGROUND_LAYERS) {
+        for (const layer of backgroundLayers) {
             drawBackground(ctx, layer, camera.x, VIEW_WIDTH, VIEW_HEIGHT);
         }
 
@@ -441,9 +431,9 @@ export function createGame() {
         const firstX = Math.floor(camera.x / 48) * 48;
         for (let x = firstX; x <= camera.x + VIEW_WIDTH; x += 48) {
             ctx.moveTo(x, 0);
-            ctx.lineTo(x, LEVEL_HEIGHT);
+            ctx.lineTo(x, levelHeight);
         }
-        for (let y = 0; y <= LEVEL_HEIGHT; y += 48) {
+        for (let y = 0; y <= levelHeight; y += 48) {
             ctx.moveTo(camera.x, y);
             ctx.lineTo(camera.x + VIEW_WIDTH, y);
         }
@@ -476,16 +466,20 @@ export function createGame() {
         if (debug) drawDebugPanel(ctx, fps);
     }
 
+    loadLevel(initialLevel);
+
     return {
         player,
         camera,
         update,
         draw,
         reset,
+        loadLevel,
         tickTimer,
         nearbyBomb,
         defuse,
         allDefused,
+        get level() { return level; },
         get timeLeft() { return timeLeft; },
     };
 }

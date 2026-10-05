@@ -16,6 +16,12 @@ export function createCamera({ viewWidth, viewHeight, levelWidth, levelHeight, s
         x: 0,
         y: 0,
 
+        // Zmienia rozmiar poziomu (przy przejściu na inny poziom).
+        setLevelSize(width, height) {
+            levelWidth = width;
+            levelHeight = height;
+        },
+
         // Natychmiast ustawia kamerę na celu (na start gry i po respawnie).
         snapTo(target) {
             camera.x = targetX(target);

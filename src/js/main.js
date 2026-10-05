@@ -3,6 +3,7 @@ import { createInput } from "./input.js";
 import { createGame, formatTime } from "./game.js";
 import { createMenu } from "./menu.js";
 import { applyDomTextures } from "./textures.js";
+import { LEVELS } from "./levels.js";
 
 const canvas = document.querySelector(".game__viewport");
 
@@ -12,9 +13,60 @@ if (!(canvas instanceof HTMLCanvasElement)) {
 
 const viewport = createViewport(canvas);
 const input = createInput();
-const game = createGame();
+const game = createGame(LEVELS[0]);
 
-// Tekstury elementów HTML (tło menu, okno z pytaniem, ekrany wygranej i przegranej).
+// ---------- Lista poziomów w menu głównym ----------
+// Karty tworzą się z tablicy LEVELS (levels.js), więc nowy poziom pojawia się w menu sam.
+
+const levelList = document.querySelector("#level-list");
+
+// "1 bomba", "2 bomby", "5 bomb"
+function bombCountLabel(count) {
+    const lastTwo = count % 100;
+    const last = count % 10;
+    if (count === 1) return "1 bomba";
+    if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return `${count} bomby`;
+    return `${count} bomb`;
+}
+
+function buildLevelList() {
+    LEVELS.forEach((level, index) => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "menu__button level-card";
+        card.dataset.action = "play";
+        card.dataset.level = String(index);
+
+        // Miniatura: tekstura z textures.js (data-texture) albo gradient zastępczy.
+        const thumb = document.createElement("span");
+        thumb.className = "level-card__thumb";
+        if (level.thumbnail) thumb.dataset.texture = level.thumbnail;
+        const hue = 200 + index * 55;
+        thumb.style.setProperty(
+            "--fallback",
+            `linear-gradient(135deg, hsl(${hue} 45% 32%), hsl(${hue + 40} 40% 14%))`,
+        );
+
+        const name = document.createElement("span");
+        name.className = "level-card__name";
+        name.textContent = level.name;
+
+        const subtitle = document.createElement("span");
+        subtitle.className = "level-card__subtitle";
+        subtitle.textContent = level.subtitle ?? "";
+
+        const info = document.createElement("span");
+        info.className = "level-card__info";
+        info.textContent = `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
+
+        card.append(thumb, name, subtitle, info);
+        levelList.append(card);
+    });
+}
+
+buildLevelList();
+
+// Tekstury elementów HTML (tło menu, miniatury poziomów, okno z pytaniem, ekrany końcowe).
 applyDomTextures();
 
 // Elementy okna z pytaniem oraz ekranów końcowych.
@@ -22,7 +74,9 @@ const bombTitle = document.querySelector("#bomb-title");
 const bombTimer = document.querySelector("#bomb-timer");
 const bombOptions = [...document.querySelectorAll(".bomb-panel__option")];
 const loseReason = document.querySelector("#lose-reason");
+const winSummary = document.querySelector("#win-summary");
 const winTime = document.querySelector("#win-time");
+const winNext = document.querySelector("#win-next");
 const LETTERS = ["A", "B", "C"];
 
 // ---------- Stan gry ----------
@@ -36,6 +90,7 @@ const LETTERS = ["A", "B", "C"];
 let state = "menu";
 let debug = false;      // tryb debug włączany klawiszem "/"
 let activeBomb = null;  // bomba, której pytanie jest teraz otwarte
+let currentLevel = 0;   // indeks aktualnego poziomu w LEVELS
 let ignoreEscapeUntil = 0;
 
 // Który ekran menu (data-screen w index.html) odpowiada któremu stanowi.
@@ -48,7 +103,9 @@ const SCREEN_FOR_STATE = {
 };
 
 const menu = createMenu({
-    play: startGame,
+    play: (data) => startGame(Number(data.level)),       // karta poziomu w menu głównym
+    retry: () => startGame(currentLevel),                // "Spróbuj ponownie" po przegranej
+    next: () => startGame(currentLevel + 1),             // "Następny poziom" po wygranej
     resume: resumeGame,
     quit: quitToMenu,
     answer: (data) => answerBomb(Number(data.index)),
@@ -56,6 +113,7 @@ const menu = createMenu({
 
 function setState(next) {
     state = next;
+    document.body.dataset.state = next; // używa tego CSS (np. do panelu sterowania w rogu)
 
     // Rozszerzamy viewport tylko podczas rozgrywki i ekranów w jej trakcie.
     const gameIsActive = ["playing", "paused", "bomb", "lost", "won"].includes(next);
@@ -67,9 +125,11 @@ function setState(next) {
     else menu.show(SCREEN_FOR_STATE[next]);
 }
 
-// Rozpocznij poziom od początku (pełny reset: gracz, bomby, timer).
-function startGame() {
-    game.reset();
+// Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
+function startGame(levelIndex = currentLevel) {
+    if (!LEVELS[levelIndex]) return;
+    currentLevel = levelIndex;
+    game.loadLevel(LEVELS[levelIndex]);
     activeBomb = null;
     setState("playing");
     enterFullscreen();
@@ -181,7 +241,13 @@ function loseGame(reason) {
 }
 
 function winGame() {
+    const hasNext = currentLevel + 1 < LEVELS.length;
+    const name = LEVELS[currentLevel].name;
+    winSummary.textContent = hasNext
+        ? `${name} ukończony! Wszystkie bomby rozbrojone.`
+        : `${name} ukończony! To był ostatni poziom, gratulacje!`;
     winTime.textContent = `Pozostały czas: ${formatTime(game.timeLeft)}`;
+    winNext.hidden = !hasNext;
     setState("won");
 }
 
@@ -209,10 +275,9 @@ function frame(now) {
 
     if (input.debugPressed()) debug = !debug;
 
-    // Esc: z ekranu sterowania wraca, w grze pauzuje, w pauzie wznawia, w oknie bomby je zamyka.
+    // Esc: w grze pauzuje, w pauzie wznawia, w oknie bomby je zamyka.
     if (input.escapePressed() && performance.now() >= ignoreEscapeUntil) {
-        if (menu.current === "controls") menu.back();
-        else if (state === "playing") pauseGame();
+        if (state === "playing") pauseGame();
         else if (state === "paused") resumeGame();
         else if (state === "bomb") {
             activeBomb = null;
