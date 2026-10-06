@@ -286,9 +286,22 @@ function frame(now) {
     }
 
     if (state === "playing") {
-        game.update(dt, input);
-        const bomb = game.nearbyBomb();
-        if (bomb && input.interactPressed()) openBomb(bomb);
+        const updateResult = game.update(dt, input);
+        if (updateResult.dashed && updateResult.dashTarget) {
+            game.cuffEnemy(updateResult.dashTarget, "dash", { fromBehind: updateResult.dashFromBehind });
+        }
+
+        if (input.interactPressed()) {
+            const enemy = game.nearbyEnemy("interact");
+            if (enemy && game.cuffEnemy(enemy, "interact")) {
+                // Cuffing takes this E press; bombs remain available on the next press.
+            } else {
+                const bomb = game.nearbyBomb();
+                if (bomb) openBomb(bomb);
+            }
+        }
+
+        if (state === "playing") game.resolveEnemyAttack();
     } else if (state === "bomb") {
         // Postać stoi, ale czas leci dalej.
         game.tickTimer(dt);
