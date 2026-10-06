@@ -17,6 +17,7 @@
 //    spawn       { x, y } miejsce startu: dolny środek gracza (x = środek, y = powierzchnia pod stopami)
 //    platforms   lista platform (patrz funkcje pomocnicze niżej)
 //    bombs       lista bomb z pytaniami (patrz funkcja bomb() niżej)
+//    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 16 x 24 px)
 //    do góry ok. 37 px (2,3 tila), w poziomie ok. 55-80 px (zależnie od różnicy wysokości
@@ -44,6 +45,10 @@ export const platform = (x, y, w, h = TILE, texture = "platform") => ({ x, y, w,
 // Podłoga na całą szerokość poziomu, na samym dole (górna krawędź 20 px nad dołem poziomu,
 // czyli dla ekranu 180 px na y = 160 = 10 tili). Dla wyższego poziomu podaj jego wysokość.
 export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHeight - 20, width, 20, "ground");
+
+// Enemy anchor: x is center, y is the surface under their feet. Optional patrol
+// bounds are center-X coordinates, with an optional speed in pixels per second.
+export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
 
 const LETTERS = ["A", "B", "C"];
 
@@ -88,6 +93,10 @@ export const LEVELS = [
             bomb(280, 88, 1),
             bomb(524, 80, 2),
             bomb(696, 136, 0),
+        ],
+        enemies: [
+            enemy("weak", 200, 112, { id: "weak-1", patrol: { minX: 184, maxX: 216, speed: 24 } }),
+            enemy("strong", 448, 104, { id: "strong-1", patrol: { minX: 428, maxX: 468, speed: 18 } }),
         ],
     },
     {

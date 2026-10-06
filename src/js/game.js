@@ -6,6 +6,7 @@
 import { VIEW_WIDTH, VIEW_HEIGHT, TILE, getScale, snap } from "./config.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport, getTextureSize } from "./textures.js";
+import { ENEMY_TYPES, canCuff, createEnemy, cuffEnemy as applyCuff, resetEnemy } from "./enemies.js";
 
 // Fizyka.
 const GRAVITY = 600;         // przyspieszenie w dół
@@ -90,6 +91,8 @@ export function createGame(initialLevel) {
         dashTime: 0,      // ile jeszcze trwa aktualny dash (0 = brak dashu)
         dashCooldown: 0,  // ile jeszcze do możliwości kolejnego dashu
         dashDir: 1,       // kierunek aktualnego dashu
+        knockbackTime: 0, // krótka blokada sterowania po uderzeniu przez przeciwnika
+        hitCooldown: 0,   // ogranicza powtarzanie odrzutu przy kontakcie z przeciwnikiem
         wallDir: 0,            // ściana przy graczu: -1 po lewej, 1 po prawej, 0 brak
         lastWallJumpSide: 0,   // strona ostatniego odbicia od ściany (0 po lądowaniu)
         sinceWallJump: Infinity, // ile sekund minęło od ostatniego odbicia od ściany
@@ -105,6 +108,7 @@ export function createGame(initialLevel) {
     let level = initialLevel;
     let platforms = [];
     let bombs = [];
+    let enemies = [];
     let backgroundLayers = [];
     let levelWidth = VIEW_WIDTH;
     let levelHeight = VIEW_HEIGHT;
@@ -186,6 +190,7 @@ export function createGame(initialLevel) {
             texture: "bomb",
             defused: false,
         }));
+        enemies = (next.enemies ?? []).map(createEnemy);
         syncSizes();
         camera.setLevelSize(levelWidth, levelHeight);
         reset();
@@ -202,6 +207,8 @@ export function createGame(initialLevel) {
         player.facing = 1;
         player.dashTime = 0;
         player.dashCooldown = 0;
+        player.knockbackTime = 0;
+        player.hitCooldown = 0;
         player.wallDir = 0;
         player.lastWallJumpSide = 0;
         player.sinceWallJump = Infinity;
@@ -219,6 +226,7 @@ export function createGame(initialLevel) {
             bomb.defused = false;
             bomb.texture = "bomb";
         }
+        enemies.forEach(resetEnemy);
         respawnPlayer();
         timeLeft = timeLimit;
     }
@@ -250,6 +258,85 @@ export function createGame(initialLevel) {
         bomb.texture = "bombDefused";
     }
 
+    // Nearest active enemy that accepts this method and is within the given range.
+    function nearbyEnemy(method = "interact", maxDistance = INTERACT_RANGE, type = null) {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        let best = null;
+        let bestDistance = maxDistance;
+        for (const enemy of enemies) {
+            if (enemy.state !== "active" || (type && enemy.type !== type)) continue;
+            const enemyX = enemy.x + enemy.w / 2;
+            const fromBehind = (cx - enemyX) * enemy.facing < 0;
+            if (method && !canCuff(enemy, method, { fromBehind })) continue;
+            const distance = Math.hypot(cx - (enemy.x + enemy.w / 2), cy - (enemy.y + enemy.h / 2));
+            if (distance <= bestDistance) {
+                best = enemy;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    function cuff(enemy, method, context = {}) {
+        if (!enemies.includes(enemy)) return false;
+        if (method === "interact") {
+            const playerX = player.x + player.w / 2;
+            const playerY = player.y + player.h / 2;
+            const enemyX = enemy.x + enemy.w / 2;
+            const enemyY = enemy.y + enemy.h / 2;
+            if (Math.hypot(playerX - enemyX, playerY - enemyY) > INTERACT_RANGE) return false;
+            context = { ...context, fromBehind: (playerX - enemyX) * enemy.facing < 0 };
+        }
+        return applyCuff(enemy, method, context);
+    }
+
+    function activeEnemyCounts() {
+        return {
+            active: enemies.filter((enemy) => enemy.state === "active").length,
+            cuffed: enemies.filter((enemy) => enemy.state === "cuffed").length,
+        };
+    }
+
+    function updateEnemies(dt) {
+        for (const enemy of enemies) {
+            if (enemy.state !== "active") continue;
+            let centerX = enemy.x + enemy.w / 2 + enemy.direction * enemy.patrol.speed * dt;
+            if (centerX <= enemy.patrol.minX) {
+                centerX = enemy.patrol.minX;
+                enemy.direction = 1;
+            } else if (centerX >= enemy.patrol.maxX) {
+                centerX = enemy.patrol.maxX;
+                enemy.direction = -1;
+            }
+            enemy.x = centerX - enemy.w / 2;
+            enemy.facing = enemy.direction;
+        }
+    }
+
+    // Contact applies knockback only; there is no health or damage system yet.
+    function resolveEnemyAttack() {
+        if (player.hitCooldown > 0) return null;
+        const enemy = enemies.find((item) => item.state === "active" && overlaps(player, item));
+        if (!enemy) return null;
+
+        const playerCenter = player.x + player.w / 2;
+        const enemyCenter = enemy.x + enemy.w / 2;
+        const awayDirection = playerCenter === enemyCenter
+            ? -enemy.facing
+            : Math.sign(playerCenter - enemyCenter);
+        const attack = ENEMY_TYPES[enemy.type].attack;
+        player.vx = awayDirection * attack.knockbackX;
+        player.vy = attack.knockbackY;
+        player.onGround = false;
+        player.dashTime = 0;
+        player.wallLockTime = 0;
+        player.canCutJump = false;
+        player.knockbackTime = attack.controlLock;
+        player.hitCooldown = attack.hitCooldown;
+        return enemy;
+    }
+
     const defusedCount = () => bombs.filter((bomb) => bomb.defused).length;
     const allDefused = () => defusedCount() === bombs.length;
 
@@ -268,8 +355,14 @@ export function createGame(initialLevel) {
     // Aktualizacja logiki. dt = czas od poprzedniej klatki w sekundach.
     function update(dt, input) {
         lastDt = dt;
+        const dashOriginX = player.x + player.w / 2;
+        let dashedThisFrame = false;
+        let dashDirection = player.dashDir;
         syncSizes();
         tickTimer(dt);
+        player.hitCooldown = Math.max(0, player.hitCooldown - dt);
+        player.knockbackTime = Math.max(0, player.knockbackTime - dt);
+        updateEnemies(dt);
 
         // Liczniki czasu
         player.dashCooldown = Math.max(0, player.dashCooldown - dt);
@@ -279,7 +372,7 @@ export function createGame(initialLevel) {
         if (input.jumpPressed()) player.jumpBuffer = JUMP_BUFFER;
 
         // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
-        if (input.dashPressed() && player.dashTime <= 0 && player.dashCooldown <= 0) {
+        if (input.dashPressed() && player.knockbackTime <= 0 && player.dashTime <= 0 && player.dashCooldown <= 0) {
             // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
             player.dashDir = input.moveX() || player.facing;
             player.facing = player.dashDir;
@@ -290,16 +383,18 @@ export function createGame(initialLevel) {
 
         if (player.dashTime > 0) {
             // W trakcie dashu: stała prędkość w poziomie, bez grawitacji i bez skoku.
+            dashedThisFrame = true;
+            dashDirection = player.dashDir;
             player.dashTime -= dt;
             player.vx = player.dashDir * DASH_SPEED;
             player.vy = 0;
         } else {
             // 2) Ruch poziomy (na chwilę zablokowany po odbiciu od ściany)
-            if (player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
-            if (player.vx !== 0) player.facing = Math.sign(player.vx);
+            if (player.knockbackTime <= 0 && player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
+            if (player.knockbackTime <= 0 && player.vx !== 0) player.facing = Math.sign(player.vx);
 
             // 3) Skok z ziemi albo odbicie od ściany
-            if (player.jumpBuffer > 0) {
+            if (player.knockbackTime <= 0 && player.jumpBuffer > 0) {
                 const sameSide = player.wallDir === player.lastWallJumpSide;
                 const wallJumpAllowed = player.wallDir !== 0
                     && (!sameSide || player.sinceWallJump >= SAME_WALL_COOLDOWN);
@@ -382,6 +477,32 @@ export function createGame(initialLevel) {
 
         // 11) Kamera goni gracza (pionowo ze strefą martwą)
         camera.follow(player, dt);
+
+        // Dash cuffing uses the existing dash movement and resolved player hitbox.
+        // Only a target in front of the dash can be hit; no separate dash mechanic is added.
+        let dashTarget = null;
+        if (dashedThisFrame) {
+            const candidates = enemies.filter((enemy) => {
+                const targetX = enemy.x + enemy.w / 2;
+                const type = ENEMY_TYPES[enemy.type];
+                if (enemy.state !== "active" || !overlaps(player, enemy)) return false;
+                if ((targetX - dashOriginX) * dashDirection <= 0) return false;
+                const playerIsBehind = (dashOriginX - targetX) * enemy.facing < 0
+                    && dashDirection === enemy.facing;
+                if (type.cuffFromBackMethods?.includes("dash")) {
+                    if (!playerIsBehind) return false;
+                }
+                return canCuff(enemy, "dash", { fromBehind: playerIsBehind });
+            });
+            candidates.sort((a, b) => Math.abs(a.x + a.w / 2 - dashOriginX) - Math.abs(b.x + b.w / 2 - dashOriginX));
+            dashTarget = candidates[0] ?? null;
+        }
+
+        const dashFromBehind = dashTarget
+            ? (dashOriginX - (dashTarget.x + dashTarget.w / 2)) * dashTarget.facing < 0
+                && dashDirection === dashTarget.facing
+            : false;
+        return { dashed: dashedThisFrame, dashDirection, dashTarget, dashFromBehind };
     }
 
     // Gracz. Pozycja NIE jest zaokrąglana do pikseli gry (ruch jest płynny), tylko wyrównana do
@@ -435,21 +556,78 @@ export function createGame(initialLevel) {
         }
     }
 
-    // Napis "E" nad bombą w zasięgu (w układzie poziomu).
-    function drawInteractPrompt(ctx) {
-        const bomb = nearbyBomb();
-        if (!bomb) return;
+    function drawEnemy(ctx, enemy) {
+        const x = Math.round(enemy.x);
+        const y = Math.round(enemy.y);
+        const { w, h, type, state } = enemy;
 
-        const text = "E: rozbrój";
+        if (state === "cuffed") {
+            // Low, desaturated silhouette and visible cuffs distinguish inactive enemies.
+            const bodyY = y + h - 7;
+            ctx.fillStyle = "#53606b";
+            ctx.fillRect(x - 2, bodyY, w + 4, 5);
+            ctx.fillStyle = "#aebbc4";
+            ctx.fillRect(x + 2, bodyY - 1, 3, 7);
+            ctx.fillRect(x + w - 5, bodyY - 1, 3, 7);
+            ctx.fillStyle = "#27333d";
+            ctx.fillRect(x + 5, bodyY + 1, 2, 2);
+            ctx.fillRect(x + w - 7, bodyY + 1, 2, 2);
+            return;
+        }
+
+        const appearance = ENEMY_TYPES[type];
+        const inset = appearance.armored ? 4 : 3;
+        ctx.fillStyle = appearance.colors.body;
+        ctx.fillRect(x + (appearance.armored ? 1 : 2), y + 7, w - (appearance.armored ? 2 : 4), h - 7);
+        if (appearance.armored) {
+            // Wider shoulders and a taller silhouette make strong enemies read differently.
+            ctx.fillStyle = appearance.colors.head;
+            ctx.fillRect(x + 3, y + 6, 4, 5);
+            ctx.fillRect(x + w - 7, y + 6, 4, 5);
+        }
+        ctx.fillStyle = appearance.colors.head;
+        ctx.fillRect(x + inset, y + 1, w - inset * 2, 7);
+        ctx.fillStyle = appearance.colors.visor;
+        const visorX = enemy.facing > 0 ? x + w - inset - (appearance.armored ? 3 : 2) : x + inset;
+        ctx.fillRect(visorX, y + 4, appearance.armored ? 3 : 2, 2);
+        ctx.fillStyle = appearance.colors.belt;
+        ctx.fillRect(x + inset, y + h - 5, w - inset * 2, appearance.armored ? 3 : 2);
+    }
+
+    // Context prompt for the nearest available enemy or bomb.
+    function drawInteractPrompt(ctx) {
+        const interactEnemy = nearbyEnemy("interact", INTERACT_RANGE);
+        const bomb = nearbyBomb();
+        const strongEnemy = nearbyEnemy(null, INTERACT_RANGE, "strong");
+        let target;
+        let text;
+        let color;
+
+        if (interactEnemy) {
+            target = interactEnemy;
+            text = interactEnemy.type === "strong" ? "E: zakuj od tyłu" : "E: zakuj";
+            color = "#a4f1dc";
+        } else if (bomb) {
+            target = bomb;
+            text = "E: rozbrój";
+            color = "#ffe08a";
+        } else if (strongEnemy) {
+            target = strongEnemy;
+            text = "Podejdź od tyłu";
+            color = "#ff9eaa";
+        } else {
+            return;
+        }
+
         ctx.font = "700 6px system-ui, sans-serif";
         ctx.textAlign = "center";
         const width = Math.ceil(ctx.measureText(text).width) + 6;
-        const x = Math.round(bomb.x + bomb.w / 2);
-        const y = Math.round(bomb.y) - 6;
+        const x = Math.round(target.x + target.w / 2);
+        const y = Math.round(target.y) - 6;
 
         ctx.fillStyle = "rgba(10, 15, 22, 0.8)";
         ctx.fillRect(x - Math.floor(width / 2), y - 8, width, 11);
-        ctx.fillStyle = "#ffe08a";
+        ctx.fillStyle = color;
         ctx.fillText(text, x, y);
     }
 
@@ -473,6 +651,19 @@ export function createGame(initialLevel) {
             ctx.setLineDash([2, 2]);
             ctx.beginPath();
             ctx.arc(bomb.x + bomb.w / 2, bomb.y + bomb.h / 2, INTERACT_RANGE, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Active and cuffed enemy hitboxes (red/gray) with their cuffing ranges.
+        for (const enemy of enemies) {
+            ctx.strokeStyle = enemy.state === "active" ? "rgba(255, 90, 120, 0.95)" : "rgba(180, 190, 200, 0.8)";
+            outline(ctx, enemy.x, enemy.y, enemy.w, enemy.h);
+            ctx.strokeStyle = enemy.type === "strong" ? "rgba(255, 120, 150, 0.55)" : "rgba(130, 255, 180, 0.45)";
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.arc(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2,
+                INTERACT_RANGE, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
         }
@@ -518,6 +709,7 @@ export function createGame(initialLevel) {
         const tex = getTextureReport();
         const scale = ctx.getTransform ? ctx.getTransform().a : 1; // skala viewportu (px ekranu na px gry)
         const wallCooldown = Math.max(0, SAME_WALL_COOLDOWN - player.sinceWallJump);
+        const enemyCounts = activeEnemyCounts();
 
         const lines = [
             "DEBUG   ( / = wyłącz )",
@@ -529,6 +721,7 @@ export function createGame(initialLevel) {
             `dash: ${dash}`,
             `ściana: ${player.wallDir}  ost.: ${player.lastWallJumpSide}  cd: ${wallCooldown.toFixed(2)}  ślizg: ${player.wallSlideTime.toFixed(2)}`,
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
+            `przeciwnicy: ${enemyCounts.active} aktywnych / ${enemyCounts.cuffed} zakutych`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `${level.name}: ${levelWidth}x${levelHeight} px   platform: ${platforms.length}`,
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
@@ -611,6 +804,9 @@ export function createGame(initialLevel) {
         // Bomby
         for (const bomb of bombs) drawBomb(ctx, bomb);
 
+        // Enemies are drawn separately from level geometry and bombs.
+        for (const enemy of enemies) drawEnemy(ctx, enemy);
+
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
             drawPlayer(ctx, g.x, g.y, g.facing, (g.life / GHOST_LIFE) * 0.45, scale);
@@ -637,6 +833,10 @@ export function createGame(initialLevel) {
         loadLevel,
         tickTimer,
         nearbyBomb,
+        nearbyEnemy,
+        cuffEnemy: cuff,
+        resolveEnemyAttack,
+        activeEnemyCounts,
         defuse,
         allDefused,
         get level() { return level; },
