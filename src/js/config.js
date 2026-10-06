@@ -1,9 +1,9 @@
 // Podstawowe ustawienia pikseli gry. Jednostką w całym kodzie jest PIKSEL GRY (1/16 tila):
 // pozycje, rozmiary, prędkości (px/s) i przyspieszenia (px/s²). Czas jest w sekundach.
 
-export const TILE = 16;         // rozmiar tila w pikselach
-export const VIEW_WIDTH = 320;  // szerokość ekranu gry w pikselach (20 tili)
-export const VIEW_HEIGHT = 180; // wysokość ekranu gry w pikselach (11,25 tila)
+export const TILE = 32;         // rozmiar tila w pikselach
+export const VIEW_WIDTH = 640;  // szerokość ekranu gry w pikselach (20 tili)
+export const VIEW_HEIGHT = 360; // wysokość ekranu gry w pikselach (11,25 tila)
 
 // true  = skala zawsze całkowita (1x, 2x, 3x...): każdy piksel gry to idealny kwadrat, a nadmiar
 //         okna wypełniają czarne pasy. Najostrzejszy obraz.

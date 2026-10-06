@@ -70,7 +70,7 @@ export const TEXTURES = {
     level3Thumbnail: { src: null, mode: "cover" },
     level4Thumbnail: { src: null, mode: "cover" },
     winBackground: { src: null, mode: "cover" },  // ekran wygranej
-    loseBackground: { src: null, mode: "cover" }, // ekran przegranej
+    loseBackground: { src: "assets/decha.jpg", mode: "cover" }, // ekran przegranej
 };
 
 // ---------------------------------------------------------------------------
