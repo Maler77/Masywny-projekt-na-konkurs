@@ -1,17 +1,18 @@
-// Viewport odpowiada tylko za canvas: rozmiar, skalowanie i czyszczenie ekranu.
-// Treść gry (rysowanie postaci, tła itd.) jest w game.js.
-
-// Stały rozmiar świata gry. Cała logika gry używa tych jednostek, nie pikseli ekranu.
-export const WORLD_WIDTH = 960;
-export const WORLD_HEIGHT = 540;
+// Viewport odpowiada tylko za canvas: rozdzielczość, skalowanie i czyszczenie ekranu.
+// Gra ma stałą, wirtualną rozdzielczość VIEW_WIDTH x VIEW_HEIGHT (320 x 180 px) i jest
+// skalowana do okna tak, żeby piksel gry zawsze był kwadratem o równym rozmiarze.
+import { VIEW_WIDTH, VIEW_HEIGHT, PIXEL_PERFECT } from "./config.js";
 
 export function createViewport(canvas) {
     const context = canvas.getContext("2d");
     if (!context) throw new Error("This browser does not support the 2D canvas API");
 
-    // Dopasowuje wewnętrzną rozdzielczość canvasa do jego rozmiaru na ekranie.
+    let scale = 1; // ile pikseli ekranu przypada na jeden piksel gry
+
+    // Dopasowuje wewnętrzną rozdzielczość canvasa do jego rozmiaru na ekranie (1:1 z pikselami
+    // urządzenia, także na ekranach retina), dzięki czemu skalowanie pikseli gry jest dokładne.
     const resize = () => {
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        const pixelRatio = window.devicePixelRatio || 1;
         canvas.width = Math.max(1, Math.round(canvas.clientWidth * pixelRatio));
         canvas.height = Math.max(1, Math.round(canvas.clientHeight * pixelRatio));
     };
@@ -21,24 +22,28 @@ export function createViewport(canvas) {
     resize();
 
     // Wywołaj na początku każdej klatki. Zwraca kontekst, na którym rysujesz
-    // we współrzędnych świata (0..960 x 0..540).
+    // we współrzędnych gry (0..320 x 0..180).
     function begin() {
         // Czyszczenie całego canvasa kolorem pasków (letterbox).
         context.setTransform(1, 0, 0, 1, 0, 0);
         context.fillStyle = "#0b1016";
         context.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Jednakowa skala w X i Y, żeby obraz się nie rozciągał.
-        const scale = Math.min(canvas.width / WORLD_WIDTH, canvas.height / WORLD_HEIGHT);
-        const offsetX = (canvas.width - WORLD_WIDTH * scale) / 2;
-        const offsetY = (canvas.height - WORLD_HEIGHT * scale) / 2;
+        // Skala: największa, przy której cały ekran gry się mieści. W trybie pixel-perfect
+        // zaokrąglona w dół do liczby całkowitej (okno mniejsze niż 320x180 skaluje ułamkowo).
+        const fit = Math.min(canvas.width / VIEW_WIDTH, canvas.height / VIEW_HEIGHT);
+        scale = PIXEL_PERFECT && fit >= 1 ? Math.floor(fit) : fit;
+
+        const offsetX = Math.floor((canvas.width - VIEW_WIDTH * scale) / 2);
+        const offsetY = Math.floor((canvas.height - VIEW_HEIGHT * scale) / 2);
 
         context.save();
         context.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+        context.imageSmoothingEnabled = false; // ostre piksele
 
-        // Przycinamy rysowanie do obszaru świata.
+        // Przycinamy rysowanie do obszaru ekranu gry.
         context.beginPath();
-        context.rect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+        context.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
         context.clip();
 
         return context;
@@ -50,8 +55,9 @@ export function createViewport(canvas) {
     }
 
     return {
-        width: WORLD_WIDTH,
-        height: WORLD_HEIGHT,
+        width: VIEW_WIDTH,
+        height: VIEW_HEIGHT,
+        get scale() { return scale; },
         begin,
         end,
         destroy() {

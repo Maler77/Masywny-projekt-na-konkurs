@@ -1,15 +1,29 @@
+import { getScale, snap } from "./config.js";
+
 // ============================================================================
 //  TEKSTURY
 //  Tu wybierasz grafiki z folderu assets/ dla wszystkich obiektów w grze
 //  oraz dla elementów interfejsu (menu, okno z pytaniem, ekrany wygranej i przegranej).
 //
+//  PIXEL ART: 1 piksel obrazka = 1 piksel gry (1/16 tila). Obrazki rysuj w skali 1:1,
+//  gra sama skaluje je do okna (patrz config.js i viewport.js). Wygładzanie jest wyłączone.
+//
 //  JAK UŻYĆ TEKSTURY DLA ISTNIEJĄCEGO OBIEKTU
 //    Wpisz ścieżkę do pliku w polu `src` (np. src: "assets/bomb.png").
 //    Bez ścieżki (src: null) obiekt jest rysowany zwykłym kolorem lub kształtem.
 //
+//  ROZMIAR OBRAZKA Z TEKSTURY (trim: true)
+//    Obrazek jest najpierw przycinany z przezroczystych brzegów (pusty margines znika),
+//    a rozmiar obiektu w grze to rozmiar przyciętego obrazka. Np. gracz 16x24 px z pustymi
+//    bokami przycięty do 12x24 ma w grze 12x24 px (0,75 x 1,5 tila).
+//    Bez tekstury obiekt ma rozmiar zastępczy (patrz game.js).
+//    HITBOX jest osobno (patrz PLAYER_HITBOX i BOMB_HITBOX w game.js): domyślnie ręczny,
+//    a po wpisaniu "auto" równy rozmiarowi przyciętego obrazka.
+//
 //  JAK DODAĆ TEKSTURĘ NOWEMU OBIEKTOWI W ŚWIECIE GRY (np. monecie)
-//    1) Dodaj wpis poniżej:      coin: { src: "assets/coin.png", pixelArt: true },
-//    2) W obiekcie wpisz nazwę:  { x: 500, y: 300, w: 24, h: 24, texture: "coin", color: "gold" }
+//    1) Dodaj wpis poniżej:      coin: { src: "assets/coin.png", trim: true },
+//    2) W obiekcie wpisz nazwę:  { x: 500, y: 300, w: 16, h: 16, texture: "coin", color: "gold" }
+//       (rozmiar obrazka pobierzesz przez getTextureSize("coin"))
 //    3) W funkcji draw() wywołaj: drawBox(ctx, coin);
 //
 //  JAK DODAĆ TEKSTURĘ ELEMENTOWI HTML
@@ -19,35 +33,34 @@
 //
 //  OPCJE WPISU
 //    src       ścieżka względem index.html albo null (brak tekstury)
-//    pixelArt  true = ostre piksele (bez wygładzania przy skalowaniu)
-//    mode      "stretch" (domyślnie) = rozciągnij na cały obiekt
-//              "cover"               = wypełnij cały obiekt bez zniekształceń (nadmiar jest ucinany)
-//              "tile"                = powtarzaj kafelek (platformy, podłoga)
+//    trim      true = przytnij przezroczyste brzegi i weź rozmiar obiektu z obrazka
+//              (tylko dla tekstur obiektów rysowanych w trybie "stretch")
+//    smooth    true = wygładzanie przy skalowaniu (domyślnie wyłączone: ostre piksele)
+//    mode      "stretch" (domyślnie) = rysuj w rozmiarze obiektu
+//              "cover"               = wypełnij cały obiekt bez zniekształceń (nadmiar ucinany)
+//              "tile"                = powtarzaj kafelek (platformy, podłoga, ściany)
 //    tileWidth, tileHeight  rozmiar kafelka w trybie "tile" (domyślnie rozmiar pliku)
 //    parallax  tylko dla tła gry: 0 = nieruchome, 1 = przesuwa się razem z kamerą
 // ============================================================================
 
 export const TEXTURES = {
-    // Gracz (rozmiar rysowania ustawiasz w PLAYER_SPRITE w game.js).
-    // Obrazek powinien patrzeć w PRAWO, bo przy chodzeniu w lewo jest odbijany.
-    player: { src: "assets/player.png", pixelArt: false },
+    // Gracz. Obrazek powinien patrzeć w PRAWO, bo przy chodzeniu w lewo jest odbijany.
+    player: { src: "assets/player1.png", trim: true },
 
-    // Platformy i podłoga: powtarzany kafelek.
-    platform: { src: null, mode: "tile", tileWidth: 64, tileHeight: 64 }, // np. "assets/platform.png"
-    ground: { src: null, mode: "tile", tileWidth: 64, tileHeight: 64 },   // np. "assets/ground.png"
+    // Platformy, podłoga i ściany: powtarzany kafelek 16x16.
+    platform: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 }, // np. "assets/platform.png"
+    ground: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 },   // np. "assets/ground.png"
+    wall: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 },     // ściany szybu (poziom 4)
 
-    // Tło poziomu: skalowane do wysokości ekranu i powtarzane w poziomie.
-    background: { src: null, parallax: 0.3 }, // poziom 1, np. "assets/background.png"
-    background2: { src: null, parallax: 0.3 }, // poziom 2
-    background3: { src: null, parallax: 0.3 }, // poziom 3
-    background4: { src: null, parallax: 0.3 }, // poziom 4 (tło przesuwa się tylko poziomo)
+    // Tło poziomu: rysowane w skali 1:1 (narysuj je na 320x180), powtarzane w poziomie.
+    background: { src: null, parallax: 0.3 },  // poziom 1, np. "assets/background.png"
+    background2: { src: null, parallax: 0.3 },  // poziom 2
+    background3: { src: null, parallax: 0.3 },  // poziom 3
+    background4: { src: null, parallax: 0.3 },  // poziom 4 (tło przesuwa się tylko poziomo)
 
-    // Ściany szybu (poziom 4): wysokie, pionowe platformy.
-    wall: { src: null, mode: "tile", tileWidth: 60, tileHeight: 60 }, // np. "assets/wall.png"
-
-    // Bomby w świecie gry (36 x 36). bombDefused to bomba po rozbrojeniu.
-    bomb: { src: null },         // np. "assets/bomb.png"
-    bombDefused: { src: null },  // np. "assets/bomb_defused.png"
+    // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
+    bomb: { src: null, trim: true },         // np. "assets/bomb.png"
+    bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"
 
     // Elementy interfejsu (HTML):
     menuBackground: { src: null, mode: "cover" }, // tło menu głównego, np. "assets/menu_background.png"
@@ -64,11 +77,11 @@ export const TEXTURES = {
 // Poniżej jest mechanizm. Zwykle nie musisz tego zmieniać.
 // ---------------------------------------------------------------------------
 
-const entries = new Map();   // nazwa -> { def, image, failed }
+const entries = new Map();   // nazwa -> { def, image, failed, trim }
 const warnedUnknown = new Set();
 
 for (const [name, def] of Object.entries(TEXTURES)) {
-    const entry = { def, image: null, failed: false };
+    const entry = { def, image: null, failed: false, trim: undefined };
     if (def.src) {
         entry.image = new Image();
         entry.image.onerror = () => {
@@ -105,15 +118,72 @@ function getReady(name) {
     return isReady(entry) ? entry : null;
 }
 
-// Rysuje teksturę w prostokącie (x, y, w, h). Zwraca true, jeśli coś narysowano.
-// Gdy zwróci false (brak tekstury lub pliku), wywołujący rysuje kolor zastępczy.
+// Prostokąt obrazka bez przezroczystych brzegów (rozmiar w pikselach obrazka).
+function computeTrim(image) {
+    const w = image.naturalWidth;
+    const h = image.naturalHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const { data } = ctx.getImageData(0, 0, w, h);
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (data[(y * w + x) * 4 + 3] === 0) continue; // w pełni przezroczysty piksel
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+    }
+    if (maxX < 0) return null; // cały obrazek przezroczysty: bez przycinania
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+// Wynik przycinania liczymy raz na teksturę. Bez `trim: true` to cały obrazek.
+function getTrim(entry) {
+    if (entry.trim !== undefined) return entry.trim;
+
+    let trim = { x: 0, y: 0, w: entry.image.naturalWidth, h: entry.image.naturalHeight };
+    if (entry.def.trim) {
+        try {
+            trim = computeTrim(entry.image) ?? trim;
+        } catch (error) {
+            // Odczyt pikseli jest zablokowany np. przy otwarciu strony z file:// (użyj serwera).
+            console.warn("Nie można przyciąć tekstury (odczyt pikseli zablokowany). Uruchom grę przez serwer HTTP.", error);
+        }
+    }
+    entry.trim = trim;
+    return trim;
+}
+
+// Rozmiar tekstury w pikselach gry (po przycięciu, jeśli trim: true) albo null,
+// gdy tekstury nie ma / jeszcze się ładuje. Z tego game.js bierze rozmiar obiektów.
+export function getTextureSize(name) {
+    const entry = getReady(name);
+    if (!entry) return null;
+    const { w, h } = getTrim(entry);
+    return { w, h };
+}
+
+// Rysuje teksturę w prostokącie (x, y, w, h), zawsze w pełnych pikselach gry.
+// Zwraca true, jeśli coś narysowano. Gdy zwróci false (brak tekstury lub pliku),
+// wywołujący rysuje kolor zastępczy.
 export function drawTexture(ctx, name, x, y, w, h) {
     const entry = getReady(name);
     if (!entry) return false;
 
     const { image, def } = entry;
+    x = Math.round(x);
+    y = Math.round(y);
+    w = Math.round(w);
+    h = Math.round(h);
+
     ctx.save();
-    ctx.imageSmoothingEnabled = !def.pixelArt;
+    ctx.imageSmoothingEnabled = Boolean(def.smooth);
 
     if (def.mode === "tile") {
         const tileW = def.tileWidth ?? image.naturalWidth;
@@ -133,7 +203,8 @@ export function drawTexture(ctx, name, x, y, w, h) {
         const sh = h / scale;
         ctx.drawImage(image, (image.naturalWidth - sw) / 2, (image.naturalHeight - sh) / 2, sw, sh, x, y, w, h);
     } else {
-        ctx.drawImage(image, x, y, w, h);
+        const t = getTrim(entry); // tylko widoczna część obrazka
+        ctx.drawImage(image, t.x, t.y, t.w, t.h, x, y, w, h);
     }
 
     ctx.restore();
@@ -146,25 +217,26 @@ export function drawBox(ctx, box) {
     if (drawTexture(ctx, box.texture, box.x, box.y, box.w, box.h)) return true;
     if (box.color) {
         ctx.fillStyle = box.color;
-        ctx.fillRect(box.x, box.y, box.w, box.h);
+        ctx.fillRect(Math.round(box.x), Math.round(box.y), Math.round(box.w), Math.round(box.h));
     }
     return false;
 }
 
-// Rysuje warstwę tła na ekranie (nie w układzie poziomu). scrollX to pozycja kamery.
+// Rysuje warstwę tła na ekranie (nie w układzie poziomu) w skali 1:1, od góry ekranu,
+// powtarzaną w poziomie. scrollX to pozycja kamery. (viewHeight zostaje dla zgodności wywołań.)
 export function drawBackground(ctx, name, scrollX, viewWidth, viewHeight) {
     const entry = getReady(name);
     if (!entry) return false;
 
     const { image, def } = entry;
-    const scale = viewHeight / image.naturalHeight;
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const offset = -Math.round((scrollX * (def.parallax ?? 0)) % width);
+    const width = Math.max(1, image.naturalWidth);
+    // Przesunięcie jest płynne (nie zaokrąglane do pikseli gry), tylko wyrównane do pikseli ekranu.
+    const offset = -snap((scrollX * (def.parallax ?? 0)) % width, getScale(ctx));
 
     ctx.save();
-    ctx.imageSmoothingEnabled = !def.pixelArt;
+    ctx.imageSmoothingEnabled = Boolean(def.smooth);
     for (let x = offset; x < viewWidth; x += width) {
-        ctx.drawImage(image, x, 0, width, viewHeight);
+        ctx.drawImage(image, x, 0);
     }
     ctx.restore();
     return true;
@@ -192,10 +264,15 @@ export function applyDomTextures(root = document) {
             repeat = "repeat";
         }
 
-        element.style.setProperty("--texture", `url("${def.src}")`);
+        // WAŻNE: adres musi być bezwzględny. Względna ścieżka ("assets/x.png") w zmiennej CSS
+        // jest rozwiązywana względem arkusza stylów (src/css/), a nie strony, więc obrazek się
+        // nie ładował (szukał src/css/assets/x.png).
+        const url = new URL(def.src, document.baseURI).href;
+
+        element.style.setProperty("--texture", `url("${url}")`);
         element.style.setProperty("--texture-size", size);
         element.style.setProperty("--texture-repeat", repeat);
-        element.style.imageRendering = def.pixelArt ? "pixelated" : "";
+        element.style.imageRendering = def.smooth ? "" : "pixelated";
     }
 }
 

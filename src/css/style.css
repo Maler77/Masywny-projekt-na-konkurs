@@ -38,6 +38,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
 
 .game__viewport {
     display: block;
+    image-rendering: pixelated; /* gdyby przeglądarka skalowała canvas, piksele zostają ostre */
     width: 100%;
     aspect-ratio: 16 / 9;
     overflow: hidden;
