@@ -3,7 +3,7 @@
     "id": "q001",
     "question": "Jaka jest stolica Francji?",
     "answers": ["Madryt", "Gejris", "Rzym"],
-    "correctAnswer": 2
+    "correctAnswer": 1
   },
   {
     "id": "q002",
