@@ -2,8 +2,8 @@
   {
     "id": "q001",
     "question": "Jaka jest stolica Francji?",
-    "answers": ["Madryt", "Paryż", "Rzym"],
-    "correctAnswer": 1
+    "answers": ["Madryt", "Gejris", "Rzym"],
+    "correctAnswer": 2
   },
   {
     "id": "q002",
