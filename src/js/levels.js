@@ -44,7 +44,22 @@ export { TILE };
 
 // Platforma: pełny prostokąt (x, y = lewy górny róg). Domyślna grubość to 1 tile.
 // texture to nazwa z textures.js, color to kolor zastępczy bez tekstury.
-export const platform = (x, y, w, h = TILE, texture = "platform") => ({ x, y, w, h, texture, color: "#24343d" });
+export function platform(x, y, w, h = TILE, textureOrOptions = "platform", extraOptions = {}) {
+    const options = typeof textureOrOptions === "object" && textureOrOptions !== null
+        ? textureOrOptions
+        : extraOptions;
+    const texture = typeof textureOrOptions === "string"
+        ? textureOrOptions
+        : (options.texture ?? "platform");
+
+    return {
+        x, y, w, h, texture,
+        color: options.color ?? "#24343d",
+        solid: options.solid ?? true,
+        oneWay: options.oneWay ?? false,
+        grappleable: options.grappleable ?? false,
+    };
+}
 
 // Podłoga na całą szerokość poziomu, na samym dole. Ma grubość 1,25 tila, więc jej górna krawędź
 // jest 40 px nad dołem poziomu (dla ekranu 360 px: y = 320 = 10 tili). Dla wyższego poziomu
@@ -85,6 +100,9 @@ export const LEVELS = [
         spawn: { x: 64, y: 320 },
         platforms: [
             ground(1600),
+            platform(64, 256, 96, 12, { oneWay: true, color: "#5c8790" }),
+            platform(304, -3, 24, 24, { solid: false, grappleable: true, color: "#d1a94f" }),
+            platform(200, 0, 24, 24, { solid: false, grappleable: true, color: "#d1a94f" }),
             platform(192, 272, 96, 48),   // blok do podłogi
             platform(352, 224, 96),
             platform(512, 176, 96),

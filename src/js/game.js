@@ -21,6 +21,11 @@ const DASH_SPEED = 240 * SCALE;      // prędkość w trakcie dashu
 const DASH_TIME = 0.15;      // czas trwania dashu (dystans ok. 2,25 tila)
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
+const GRAPPLE_RANGE = 160 * SCALE;
+const GRAPPLE_PUMP_ACCEL = 420 * SCALE;
+const GRAPPLE_COOLDOWN = 0.5;
+const GRAPPLE_MIN_LENGTH = 24 * SCALE;
+const GRAPPLE_LENGTH_SPEED = 160 * SCALE;
 
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
 const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
@@ -60,6 +65,30 @@ const BOMB_HITBOX = { w: 16 * SCALE, h: 16 * SCALE };
 // Czy dwa prostokąty na siebie nachodzą (kolizja AABB).
 function overlaps(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// True when a segment crosses a rectangle, so the hook cannot pass through platforms.
+function segmentIntersectsBox(x1, y1, x2, y2, box) {
+    let tMin = 0;
+    let tMax = 1;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    for (const [origin, delta, min, max] of [
+        [x1, dx, box.x, box.x + box.w],
+        [y1, dy, box.y, box.y + box.h],
+    ]) {
+        if (Math.abs(delta) < 1e-9) {
+            if (origin < min || origin > max) return false;
+            continue;
+        }
+        let near = (min - origin) / delta;
+        let far = (max - origin) / delta;
+        if (near > far) [near, far] = [far, near];
+        tMin = Math.max(tMin, near);
+        tMax = Math.min(tMax, far);
+        if (tMin > tMax) return false;
+    }
+    return true;
 }
 
 // Obrys prostokąta o grubości 1 piksela, wewnątrz prostokąta (do trybu debug).
@@ -120,6 +149,10 @@ export function createGame(initialLevel) {
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
+    let grappleTarget = null;
+    let grappleLength = 0;
+    let grappleCooldown = 0;
+    const grappleTargetLocks = new Map();
     let lastDt = 0; // do wyświetlania w trybie debug
 
     const camera = createCamera({
@@ -219,6 +252,10 @@ export function createGame(initialLevel) {
         player.jumpBuffer = 0;
         player.canCutJump = false;
         ghosts.length = 0;
+        grappleTarget = null;
+        grappleLength = 0;
+        grappleCooldown = 0;
+        grappleTargetLocks.clear();
         camera.snapTo(player);
     }
 
@@ -253,6 +290,92 @@ export function createGame(initialLevel) {
             }
         }
         return best;
+    }
+
+    function detachGrapple() {
+        if (!grappleTarget) return;
+        grappleTargetLocks.set(grappleTarget, GRAPPLE_COOLDOWN);
+        grappleTarget = null;
+        grappleLength = 0;
+        grappleCooldown = GRAPPLE_COOLDOWN;
+    }
+
+    function lockCurrentTargetForTransfer() {
+        if (grappleTarget) grappleTargetLocks.set(grappleTarget, GRAPPLE_COOLDOWN);
+    }
+
+    function attachGrapple(target) {
+        grappleTarget = target;
+        const anchorX = target.x + target.w / 2;
+        const anchorY = target.y + target.h / 2;
+        grappleLength = Math.hypot(
+            player.x + player.w / 2 - anchorX,
+            player.y + player.h / 2 - anchorY,
+        );
+        player.canCutJump = false;
+    }
+
+    function hasClearGrappleLine(target, fromX, fromY) {
+        const toX = target.x + target.w / 2;
+        const toY = target.y + target.h / 2;
+        return !platforms.some((platform) => platform !== target
+            && platform.solid !== false
+            && segmentIntersectsBox(fromX, fromY, toX, toY, platform));
+    }
+
+    // Nearest grappleable point in front of the player, within range and unobstructed.
+    function nearbyGrappleTarget(maxDistance = GRAPPLE_RANGE, excludedTarget = null) {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        let best = null;
+        let bestDistance = maxDistance;
+        for (const target of platforms) {
+            if (target.grappleable !== true || target === excludedTarget || grappleTargetLocks.has(target)) continue;
+            const targetX = target.x + target.w / 2;
+            const targetY = target.y + target.h / 2;
+            if ((targetX - cx) * player.facing <= 0) continue;
+            const distance = Math.hypot(cx - targetX, cy - targetY);
+            if (distance < bestDistance && hasClearGrappleLine(target, cx, cy)) {
+                best = target;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    function constrainGrappleRope() {
+        if (!grappleTarget || grappleLength <= 0) return;
+        const anchorX = grappleTarget.x + grappleTarget.w / 2;
+        const anchorY = grappleTarget.y + grappleTarget.h / 2;
+        const centerX = player.x + player.w / 2;
+        const centerY = player.y + player.h / 2;
+        const dx = centerX - anchorX;
+        const dy = centerY - anchorY;
+        const distance = Math.hypot(dx, dy);
+        if (distance <= grappleLength) return; // Rope is slack until it becomes taut.
+
+        const nx = dx / distance;
+        const ny = dy / distance;
+        const nextCenterX = anchorX + nx * grappleLength;
+        const nextCenterY = anchorY + ny * grappleLength;
+        const nextPlayer = {
+            x: nextCenterX - player.w / 2,
+            y: nextCenterY - player.h / 2,
+            w: player.w,
+            h: player.h,
+        };
+        const blocked = platforms.some((platform) => platform.solid !== false && overlaps(nextPlayer, platform));
+        if (!blocked) {
+            player.x = nextPlayer.x;
+            player.y = nextPlayer.y;
+        }
+
+        // Remove only velocity that would stretch the rope farther; keep tangential swing momentum.
+        const outwardSpeed = player.vx * nx + player.vy * ny;
+        if (outwardSpeed > 0) {
+            player.vx -= outwardSpeed * nx;
+            player.vy -= outwardSpeed * ny;
+        }
     }
 
     function defuse(bomb) {
@@ -347,6 +470,7 @@ export function createGame(initialLevel) {
     function touchingWall(dir) {
         const probe = { x: dir < 0 ? player.x - 1 : player.x + player.w, y: player.y, w: 1, h: player.h };
         for (const p of platforms) {
+            if (p.solid === false || p.oneWay) continue;
             if (!overlaps(probe, p)) continue;
             const reach = Math.min(player.y + player.h, p.y + p.h) - Math.max(player.y, p.y);
             if (reach >= WALL_MIN_OVERLAP) return true;
@@ -366,15 +490,35 @@ export function createGame(initialLevel) {
         player.knockbackTime = Math.max(0, player.knockbackTime - dt);
         updateEnemies(dt);
 
+        grappleCooldown = Math.max(0, grappleCooldown - dt);
+        for (const [target, remaining] of grappleTargetLocks) {
+            const nextRemaining = remaining - dt;
+            if (nextRemaining <= 0) grappleTargetLocks.delete(target);
+            else grappleTargetLocks.set(target, nextRemaining);
+        }
+        if (grappleTarget && input.grappleReleasePressed()) detachGrapple();
+        if (grappleTarget && input.grapplePressed()) {
+            const nextTarget = nearbyGrappleTarget(GRAPPLE_RANGE, grappleTarget);
+            if (nextTarget) {
+                lockCurrentTargetForTransfer();
+                attachGrapple(nextTarget); // Switching anchors has no release cooldown.
+            }
+            else detachGrapple();
+        } else if (!grappleTarget && grappleCooldown <= 0 && input.grapplePressed()
+            && player.knockbackTime <= 0 && player.dashTime <= 0) {
+            const target = nearbyGrappleTarget();
+            if (target) attachGrapple(target);
+        }
+
         // Liczniki czasu
         player.dashCooldown = Math.max(0, player.dashCooldown - dt);
         player.wallLockTime = Math.max(0, player.wallLockTime - dt);
         player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
         player.sinceWallJump += dt;
-        if (input.jumpPressed()) player.jumpBuffer = JUMP_BUFFER;
+        if (input.jumpPressed() && !grappleTarget) player.jumpBuffer = JUMP_BUFFER;
 
         // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
-        if (input.dashPressed() && player.knockbackTime <= 0 && player.dashTime <= 0 && player.dashCooldown <= 0) {
+        if (input.dashPressed() && !grappleTarget && player.knockbackTime <= 0 && player.dashTime <= 0 && player.dashCooldown <= 0) {
             // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
             player.dashDir = input.moveX() || player.facing;
             player.facing = player.dashDir;
@@ -383,7 +527,23 @@ export function createGame(initialLevel) {
             player.wallLockTime = 0;
         }
 
-        if (player.dashTime > 0) {
+        if (grappleTarget) {
+            const lengthChange = input.grappleLengthChange();
+            grappleLength = Math.max(
+                GRAPPLE_MIN_LENGTH,
+                Math.min(GRAPPLE_RANGE, grappleLength + lengthChange * GRAPPLE_LENGTH_SPEED * dt),
+            );
+            const pump = input.moveX();
+            player.vx += pump * GRAPPLE_PUMP_ACCEL * dt;
+            player.vy = Math.min(player.vy + GRAVITY * dt, MAX_FALL_SPEED);
+            if (pump !== 0) player.facing = Math.sign(pump);
+            player.dashTime = 0;
+            player.canCutJump = false;
+        }
+
+        if (grappleTarget) {
+            // Swing movement uses both velocity axes; collision resolution below remains shared.
+        } else if (player.dashTime > 0) {
             // W trakcie dashu: stała prędkość w poziomie, bez grawitacji i bez skoku.
             dashedThisFrame = true;
             dashDirection = player.dashDir;
@@ -438,6 +598,7 @@ export function createGame(initialLevel) {
         // 6) Ruch w poziomie, potem kolizje w poziomie
         player.x += player.vx * dt;
         for (const p of platforms) {
+            if (p.solid === false || p.oneWay) continue;
             if (!overlaps(player, p)) continue;
             if (player.vx > 0) player.x = p.x - player.w;
             else if (player.vx < 0) player.x = p.x + p.w;
@@ -446,10 +607,20 @@ export function createGame(initialLevel) {
         player.x = Math.max(0, Math.min(levelWidth - player.w, player.x));
 
         // 7) Ruch w pionie, potem kolizje w pionie
+        const previousBottom = player.y + player.h;
         player.y += player.vy * dt;
         player.onGround = false;
         for (const p of platforms) {
+            if (p.solid === false) continue;
             if (!overlaps(player, p)) continue;
+            if (p.oneWay) {
+                // Semisolid surface: only catch a descending player crossing its top.
+                if (player.vy <= 0 || previousBottom > p.y) continue;
+                player.y = p.y - player.h;
+                player.onGround = true;
+                player.vy = 0;
+                continue;
+            }
             if (player.vy > 0) {
                 player.y = p.y - player.h; // lądowanie na platformie
                 player.onGround = true;
@@ -458,6 +629,7 @@ export function createGame(initialLevel) {
             }
             player.vy = 0;
         }
+        constrainGrappleRope();
 
         // 8) Kontakt ze ścianą (do odbicia w następnej klatce); lądowanie odnawia odbicia
         if (player.onGround) player.lastWallJumpSide = 0;
@@ -600,6 +772,7 @@ export function createGame(initialLevel) {
     function drawInteractPrompt(ctx) {
         const interactEnemy = nearbyEnemy("interact", INTERACT_RANGE);
         const bomb = nearbyBomb();
+        const grapple = nearbyGrappleTarget();
         const strongEnemy = nearbyEnemy(null, INTERACT_RANGE, "strong");
         let target;
         let text;
@@ -613,6 +786,10 @@ export function createGame(initialLevel) {
             target = bomb;
             text = "E: rozbrój";
             color = "#ffe08a";
+        } else if (grapple) {
+            target = grapple;
+            text = "Q: uzyj haka";
+            color = "#f2d37b";
         } else if (strongEnemy) {
             target = strongEnemy;
             text = "Podejdź od tyłu";
@@ -803,6 +980,15 @@ export function createGame(initialLevel) {
             }
         }
 
+        if (grappleTarget) {
+            ctx.strokeStyle = "#f2d37b";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(player.x + player.w / 2, player.y + player.h / 2);
+            ctx.lineTo(grappleTarget.x + grappleTarget.w / 2, grappleTarget.y + grappleTarget.h / 2);
+            ctx.stroke();
+        }
+
         // Bomby
         for (const bomb of bombs) drawBomb(ctx, bomb);
 
@@ -833,6 +1019,7 @@ export function createGame(initialLevel) {
         draw,
         reset,
         loadLevel,
+        getGrappleTargets: () => platforms.filter((platform) => platform.grappleable === true),
         tickTimer,
         nearbyBomb,
         nearbyEnemy,

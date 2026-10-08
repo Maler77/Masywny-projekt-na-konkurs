@@ -4,16 +4,20 @@
 const LEFT = ["ArrowLeft", "KeyA"];
 const RIGHT = ["ArrowRight", "KeyD"];
 const JUMP = ["Space", "ArrowUp", "KeyW"];
+const GRAPPLE_RELEASE = ["Space"];
+const GRAPPLE_SHORTEN = ["ArrowUp", "KeyW"];
+const GRAPPLE_EXTEND = ["ArrowDown", "KeyS"];
 const DASH = ["ShiftLeft", "ShiftRight"];
 const DEBUG = ["Slash"];
 const PAUSE = ["Escape"];
 const INTERACT = ["KeyE"];
+const GRAPPLE = ["KeyQ"];
 // Odpowiedzi w oknie bomby: litery A, B, C (albo cyfry 1, 2, 3).
 const ANSWERS = [["KeyA", "Digit1"], ["KeyB", "Digit2"], ["KeyC", "Digit3"]];
 
 // Klawisze, którym blokujemy domyślne działanie (strzałki i spacja przewijają stronę,
 // a "/" w Firefoksie otwiera szybkie wyszukiwanie).
-const GAME_KEYS = new Set([...LEFT, ...RIGHT, ...JUMP, ...DEBUG, "ArrowDown"]);
+const GAME_KEYS = new Set([...LEFT, ...RIGHT, ...JUMP, ...DEBUG, ...GRAPPLE, ...GRAPPLE_EXTEND]);
 
 // Zwraca kod klawisza. Znak "/" traktujemy zawsze jako "Slash", także na układach,
 // gdzie jest pod Shift+7 (np. niemiecki).
@@ -51,6 +55,8 @@ export function createInput() {
         jumpHeld: () => any(JUMP, down),
         // Czy klawisz skoku został dopiero co wciśnięty (jeden skok na naciśnięcie).
         jumpPressed: () => any(JUMP, pressed),
+        grappleReleasePressed: () => any(GRAPPLE_RELEASE, pressed),
+        grappleLengthChange: () => Number(any(GRAPPLE_EXTEND, down)) - Number(any(GRAPPLE_SHORTEN, down)),
         // Czy Shift został dopiero co wciśnięty (dash).
         dashPressed: () => any(DASH, pressed),
         // Czy "/" został dopiero co wciśnięty (przełączenie trybu debug).
@@ -59,6 +65,7 @@ export function createInput() {
         escapePressed: () => any(PAUSE, pressed),
         // Czy E został dopiero co wciśnięty (interakcja z bombą).
         interactPressed: () => any(INTERACT, pressed),
+        grapplePressed: () => any(GRAPPLE, pressed),
         // Indeks odpowiedzi (0 = A, 1 = B, 2 = C) wciśniętej w tej klatce albo -1.
         answerPressed: () => ANSWERS.findIndex((codes) => any(codes, pressed)),
         // Wołane raz na koniec każdej klatki z main.js.
