@@ -30,3 +30,19 @@ Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij 
 ## Przeciwnicy
 
 Poziom 1 zawiera patrolującego przeciwnika słabego (E z bliska lub dash) i patrolującego silnego (E od tyłu, zgodnie z kierunkiem, w którym patrzy). Kontakt z aktywnym przeciwnikiem odrzuca gracza; silny przeciwnik odrzuca mocniej. Krótki cooldown zapobiega ciągłym uderzeniom. Nowych przeciwników dodawaj do `enemies` w definicji poziomu. Typy i dozwolone metody kajdankowania są zdefiniowane w `src/js/enemies.js`; aby dodać metodę, dopisz jej nazwę do `cuffMethods` i wywołaj `game.cuffEnemy(enemy, "nazwaMetody")` z odpowiedniej akcji gry.
+
+## Platform types
+
+Level platforms are created with `platform(x, y, w, h, options)`. Platforms default to the existing fully solid behavior. Examples:
+
+```js
+platform(100, 240, 96, 12, { oneWay: true });
+platform(300, 160, 24, 24, { solid: false, grappleable: true });
+platform(400, 200, 96, 16, { grappleable: true });
+```
+
+`oneWay` lets the player pass from below and the sides, then catches them while descending onto the top. Intentional drop-through is not implemented. `grappleable` is independent of collision, so a target can be non-solid. A future hook can query `game.getGrappleTargets()`; each result has `x`, `y`, `w`, `h`, and its capability flags.
+
+## Grappling hook
+
+Press Q while facing a grappleable point within `160 * SCALE` game pixels (320 px with the current tile size) to attach. Solid platforms block the hook path. The rope swings with gravity and preserves momentum; left and right add swing force. While attached, W/Up shortens the rope and S/Down lengthens it. Space releases the rope and keeps swing momentum. Press Q again to switch to another reachable target immediately, or release if there is no other target. A full release starts the 0.5-second regrapple cooldown. The last detached anchor stays unavailable for 0.5 seconds. Grapple targets are level platforms marked with `grappleable: true` and can be listed with `game.getGrappleTargets()`.
