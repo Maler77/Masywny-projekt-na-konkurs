@@ -1,35 +1,37 @@
 // Stan i logika gry: gracz, fizyka, dash, wall-jump, bomby, timer, tło, kamera.
 // Układ poziomu (platformy, bomby, czas) pochodzi z levels.js i jest wczytywany przez loadLevel().
 //
-// JEDNOSTKI: wszystko jest w pikselach gry (1 px = 1/16 tila, ekran ma 320 x 180 px).
+// JEDNOSTKI: wszystko jest w pikselach gry (1 px = 1/TILE tila; patrz config.js).
 // Prędkości są w px/s, przyspieszenia w px/s², czas w sekundach.
-import { VIEW_WIDTH, VIEW_HEIGHT, TILE, getScale, snap } from "./config.js";
+// Wartości poniżej są zapisane dla tila 16 px i mnożone przez SCALE (= TILE / 16), więc po zmianie
+// rozmiaru tila fizyka, hitboxy i interfejs skalują się razem z grafiką.
+import { VIEW_WIDTH, VIEW_HEIGHT, TILE, SCALE, getScale, snap } from "./config.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport, getTextureSize } from "./textures.js";
 import { ENEMY_TYPES, canCuff, createEnemy, cuffEnemy as applyCuff, resetEnemy } from "./enemies.js";
 
 // Fizyka.
-const GRAVITY = 600;         // przyspieszenie w dół
-const MAX_FALL_SPEED = 330;  // maksymalna prędkość spadania
-const JUMP_SPEED = 210;      // prędkość początkowa skoku (wysokość skoku ok. 37 px = 2,3 tila)
-const MOVE_SPEED = 96;       // prędkość biegu (6 tili na sekundę)
+const GRAVITY = 600 * SCALE;         // przyspieszenie w dół
+const MAX_FALL_SPEED = 330 * SCALE;  // maksymalna prędkość spadania
+const JUMP_SPEED = 210 * SCALE;      // prędkość początkowa skoku (wysokość skoku ok. 2,3 tila)
+const MOVE_SPEED = 96 * SCALE;       // prędkość biegu (6 tili na sekundę)
 
 // Dash (Shift): krótki, szybki zryw w poziomie, bez grawitacji.
-const DASH_SPEED = 240;      // prędkość w trakcie dashu
-const DASH_TIME = 0.15;      // czas trwania dashu (dystans 36 px)
+const DASH_SPEED = 240 * SCALE;      // prędkość w trakcie dashu
+const DASH_TIME = 0.15;      // czas trwania dashu (dystans ok. 2,25 tila)
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
 
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
-const WALL_JUMP_SPEED = 200;     // prędkość pionowa odbicia
-const WALL_KICK_SPEED = 100;     // prędkość pozioma odbicia (od ściany)
+const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
+const WALL_KICK_SPEED = 100 * SCALE;     // prędkość pozioma odbicia (od ściany)
 const WALL_LOCK_TIME = 0.14;     // tyle czasu sterowanie poziome jest zablokowane po odbiciu
-const WALL_MIN_OVERLAP = 18;     // ściana musi sięgać co najmniej tyle przy graczu (platforma gruba na 1 tile to nie ściana)
+const WALL_MIN_OVERLAP = 18 * SCALE;     // ściana musi sięgać co najmniej tyle przy graczu (platforma gruba na 1 tile to nie ściana)
 const JUMP_BUFFER = 0.1;         // skok wciśnięty chwilę za wcześnie (przed lądowaniem/ścianą) nadal się liczy
 
 // Zsuwanie po ścianie jest tylko chwilowe: przez WALL_SLIDE_DURATION spadasz wolno
 // (WALL_SLIDE_SPEED, o ile trzymasz kierunek w stronę ściany), a potem przyspieszasz normalnie.
-const WALL_SLIDE_SPEED = 40;     // maksymalna prędkość spadania na początku zsuwania
+const WALL_SLIDE_SPEED = 40 * SCALE;     // maksymalna prędkość spadania na początku zsuwania
 const WALL_SLIDE_DURATION = 0.35; // jak długo trwa wolne zsuwanie od dotknięcia ściany
 
 // Odbicie od ściany z tej samej strony co poprzednie jest możliwe dopiero po tylu sekundach
@@ -40,20 +42,20 @@ const WALL_SLIDE_DURATION = 0.35; // jak długo trwa wolne zsuwanie od dotknięc
 const SAME_WALL_COOLDOWN = 1.0;
 
 // Bomby (pozycje i pytania są w levels.js).
-const INTERACT_RANGE = 28;   // odległość od środka bomby, w której działa klawisz E
+const INTERACT_RANGE = 28 * SCALE;   // odległość od środka bomby, w której działa klawisz E
 
 // ROZMIAR OBRAZKA obiektów bez tekstury (z teksturą bierze się z przyciętego obrazka).
-const PLAYER_FALLBACK = { w: 16, h: 24 };  // 1 x 1,5 tila
-const BOMB_FALLBACK = { w: 16, h: 16 };    // 1 x 1 tila
+const PLAYER_FALLBACK = { w: 16 * SCALE, h: 24 * SCALE };  // 1 x 1,5 tila
+const BOMB_FALLBACK = { w: 16 * SCALE, h: 16 * SCALE };    // 1 x 1 tila
 
 // HITBOXY (kolizje, wall-jump, interakcja). Dla każdego obiektu wybierasz jedną z opcji:
 //   { w, h }                    ręcznie, w pikselach (domyślnie)
 //   { w, h, offsetX, offsetY }  ręcznie + przesunięcie hitboxa względem dolnego środka obrazka
 //   "auto"                      hitbox = rozmiar obrazka (po przycięciu z przezroczystych brzegów)
 // Hitbox stoi dolnym środkiem w tym samym punkcie co obrazek (stopy gracza są na dole obu).
-const PLAYER_HITBOX = { w: 12, h: 22 };
-const BOMB_HITBOX = { w: 16, h: 16 };
-// Przykłady:  const PLAYER_HITBOX = "auto";   albo   { w: 10, h: 20, offsetX: 1 }
+const PLAYER_HITBOX = { w: 12 * SCALE, h: 22 * SCALE };
+const BOMB_HITBOX = { w: 16 * SCALE, h: 16 * SCALE };
+// Przykłady:  const PLAYER_HITBOX = "auto";   albo   { w: 20 * SCALE, h: 40 * SCALE, offsetX: 2 }
 
 // Czy dwa prostokąty na siebie nachodzą (kolizja AABB).
 function overlaps(a, b) {
@@ -114,7 +116,7 @@ export function createGame(initialLevel) {
     let levelHeight = VIEW_HEIGHT;
     let timeLimit = 60;
     let timeLeft = 60; // pozostały czas w sekundach
-    let spawn = { x: 32, y: 160 }; // dolny środek gracza na starcie
+    let spawn = { x: 32 * SCALE, y: 160 * SCALE }; // dolny środek gracza na starcie
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
@@ -174,7 +176,7 @@ export function createGame(initialLevel) {
         levelWidth = next.width;
         levelHeight = next.height ?? VIEW_HEIGHT;
         timeLimit = next.timeLimit;
-        spawn = next.spawn ?? { x: 32, y: 160 };
+        spawn = next.spawn ?? { x: 32 * SCALE, y: 160 * SCALE };
 
         // Pozycja bomby w danych to jej dolny środek: bomba startuje jako punkt w tym miejscu,
         // a syncSize() nadaje jej rozmiar hitboxa i obrazka, zachowując ten dolny środek.
@@ -473,7 +475,7 @@ export function createGame(initialLevel) {
         }
 
         // 10) Zabezpieczenie: gdyby gracz wypadł poza poziom
-        if (player.y > levelHeight + 100) respawnPlayer();
+        if (player.y > levelHeight + 100 * SCALE) respawnPlayer();
 
         // 11) Kamera goni gracza (pionowo ze strefą martwą)
         camera.follow(player, dt);
@@ -521,7 +523,7 @@ export function createGame(initialLevel) {
             ctx.fillStyle = player.color;
             ctx.fillRect(0, 0, r.w, r.h);
             ctx.fillStyle = "#10201f"; // oko, żeby było widać, w którą stronę patrzy
-            ctx.fillRect(r.w - 5, 5, 2, 2);
+            ctx.fillRect(r.w - 5 * SCALE, 5 * SCALE, 2 * SCALE, 2 * SCALE);
         }
         ctx.restore();
     }
@@ -534,8 +536,8 @@ export function createGame(initialLevel) {
         if (drawTexture(ctx, bomb.texture, x, y, r.w, r.h)) return;
 
         const cx = x + Math.round(r.w / 2);
-        const cy = y + Math.round(r.h / 2) + 1;
-        const radius = Math.round(r.w / 2) - 2;
+        const cy = y + Math.round(r.h / 2) + SCALE;
+        const radius = Math.round(r.w / 2) - 2 * SCALE;
 
         ctx.fillStyle = bomb.defused ? "#2e7d5b" : "#1a1a1f";
         for (let dy = -radius; dy <= radius; dy++) {
@@ -545,53 +547,53 @@ export function createGame(initialLevel) {
 
         // Lont
         ctx.fillStyle = "#c9a27a";
-        ctx.fillRect(cx, cy - radius - 1, 1, 1);
-        ctx.fillRect(cx + 1, cy - radius - 2, 1, 1);
-        ctx.fillRect(cx + 2, cy - radius - 3, 1, 1);
+        for (let i = 1; i <= 3; i++) ctx.fillRect(cx + (i - 1) * SCALE, cy - radius - i * SCALE, SCALE, SCALE);
 
         // Migająca iskra (tylko na nierozbrojonej bombie)
         if (!bomb.defused && Math.floor(timeLeft * 3) % 2 === 0) {
             ctx.fillStyle = "#ff7a3d";
-            ctx.fillRect(cx + 2, cy - radius - 5, 2, 2);
+            ctx.fillRect(cx + 2 * SCALE, cy - radius - 5 * SCALE, 2 * SCALE, 2 * SCALE);
         }
     }
 
     function drawEnemy(ctx, enemy) {
+        const u = (value) => Math.round(value * SCALE); // piksele projektu 16 px -> piksele gry
         const x = Math.round(enemy.x);
         const y = Math.round(enemy.y);
         const { w, h, type, state } = enemy;
 
         if (state === "cuffed") {
             // Low, desaturated silhouette and visible cuffs distinguish inactive enemies.
-            const bodyY = y + h - 7;
+            const bodyY = y + h - u(7);
             ctx.fillStyle = "#53606b";
-            ctx.fillRect(x - 2, bodyY, w + 4, 5);
+            ctx.fillRect(x - u(2), bodyY, w + u(4), u(5));
             ctx.fillStyle = "#aebbc4";
-            ctx.fillRect(x + 2, bodyY - 1, 3, 7);
-            ctx.fillRect(x + w - 5, bodyY - 1, 3, 7);
+            ctx.fillRect(x + u(2), bodyY - u(1), u(3), u(7));
+            ctx.fillRect(x + w - u(5), bodyY - u(1), u(3), u(7));
             ctx.fillStyle = "#27333d";
-            ctx.fillRect(x + 5, bodyY + 1, 2, 2);
-            ctx.fillRect(x + w - 7, bodyY + 1, 2, 2);
+            ctx.fillRect(x + u(5), bodyY + u(1), u(2), u(2));
+            ctx.fillRect(x + w - u(7), bodyY + u(1), u(2), u(2));
             return;
         }
 
         const appearance = ENEMY_TYPES[type];
-        const inset = appearance.armored ? 4 : 3;
+        const inset = u(appearance.armored ? 4 : 3);
         ctx.fillStyle = appearance.colors.body;
-        ctx.fillRect(x + (appearance.armored ? 1 : 2), y + 7, w - (appearance.armored ? 2 : 4), h - 7);
+        ctx.fillRect(x + u(appearance.armored ? 1 : 2), y + u(7), w - u(appearance.armored ? 2 : 4), h - u(7));
         if (appearance.armored) {
             // Wider shoulders and a taller silhouette make strong enemies read differently.
             ctx.fillStyle = appearance.colors.head;
-            ctx.fillRect(x + 3, y + 6, 4, 5);
-            ctx.fillRect(x + w - 7, y + 6, 4, 5);
+            ctx.fillRect(x + u(3), y + u(6), u(4), u(5));
+            ctx.fillRect(x + w - u(7), y + u(6), u(4), u(5));
         }
         ctx.fillStyle = appearance.colors.head;
-        ctx.fillRect(x + inset, y + 1, w - inset * 2, 7);
+        ctx.fillRect(x + inset, y + u(1), w - inset * 2, u(7));
         ctx.fillStyle = appearance.colors.visor;
-        const visorX = enemy.facing > 0 ? x + w - inset - (appearance.armored ? 3 : 2) : x + inset;
-        ctx.fillRect(visorX, y + 4, appearance.armored ? 3 : 2, 2);
+        const visorW = u(appearance.armored ? 3 : 2);
+        const visorX = enemy.facing > 0 ? x + w - inset - visorW : x + inset;
+        ctx.fillRect(visorX, y + u(4), visorW, u(2));
         ctx.fillStyle = appearance.colors.belt;
-        ctx.fillRect(x + inset, y + h - 5, w - inset * 2, appearance.armored ? 3 : 2);
+        ctx.fillRect(x + inset, y + h - u(5), w - inset * 2, u(appearance.armored ? 3 : 2));
     }
 
     // Context prompt for the nearest available enemy or bomb.
@@ -619,14 +621,14 @@ export function createGame(initialLevel) {
             return;
         }
 
-        ctx.font = "700 6px system-ui, sans-serif";
+        ctx.font = `700 ${6 * SCALE}px system-ui, sans-serif`;
         ctx.textAlign = "center";
-        const width = Math.ceil(ctx.measureText(text).width) + 6;
+        const width = Math.ceil(ctx.measureText(text).width) + 6 * SCALE;
         const x = Math.round(target.x + target.w / 2);
-        const y = Math.round(target.y) - 6;
+        const y = Math.round(target.y) - 6 * SCALE;
 
         ctx.fillStyle = "rgba(10, 15, 22, 0.8)";
-        ctx.fillRect(x - Math.floor(width / 2), y - 8, width, 11);
+        ctx.fillRect(x - Math.floor(width / 2), y - 8 * SCALE, width, 11 * SCALE);
         ctx.fillStyle = color;
         ctx.fillText(text, x, y);
     }
@@ -727,15 +729,15 @@ export function createGame(initialLevel) {
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
         ];
 
-        const lineHeight = 7;
+        const lineHeight = 7 * SCALE;
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
-        ctx.fillRect(4, 16, 170, lines.length * lineHeight + 6);
+        ctx.fillRect(4 * SCALE, 16 * SCALE, 200 * SCALE, lines.length * lineHeight + 6 * SCALE);
 
         ctx.fillStyle = "#d8ffe4";
-        ctx.font = "5px ui-monospace, Menlo, Consolas, monospace";
+        ctx.font = `${5 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        lines.forEach((text, i) => ctx.fillText(text, 7, 19 + i * lineHeight));
+        lines.forEach((text, i) => ctx.fillText(text, 7 * SCALE, 19 * SCALE + i * lineHeight));
         ctx.textBaseline = "alphabetic";
     }
 
@@ -744,22 +746,22 @@ export function createGame(initialLevel) {
     function drawHud(ctx) {
         ctx.textBaseline = "alphabetic";
         ctx.textAlign = "left";
-        ctx.font = "700 7px system-ui, sans-serif";
+        ctx.font = `700 ${7 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.85)";
-        ctx.fillText(level.name, 6, 11);
+        ctx.fillText(level.name, 6 * SCALE, 11 * SCALE);
 
         // Timer i bomby w prawym górnym rogu
         ctx.fillStyle = "rgba(10, 15, 22, 0.55)";
-        ctx.fillRect(VIEW_WIDTH - 54, 4, 50, 25);
+        ctx.fillRect(VIEW_WIDTH - 54 * SCALE, 4 * SCALE, 50 * SCALE, 25 * SCALE);
 
         ctx.textAlign = "right";
-        ctx.font = "700 12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.font = `700 ${12 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
         ctx.fillStyle = timeLeft <= 10 ? "#ff6b6b" : "#e8edf4";
-        ctx.fillText(formatTime(timeLeft), VIEW_WIDTH - 8, 17);
+        ctx.fillText(formatTime(timeLeft), VIEW_WIDTH - 8 * SCALE, 17 * SCALE);
 
-        ctx.font = "6px system-ui, sans-serif";
+        ctx.font = `${6 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.9)";
-        ctx.fillText(`Bomby: ${defusedCount()}/${bombs.length}`, VIEW_WIDTH - 8, 26);
+        ctx.fillText(`Bomby: ${defusedCount()}/${bombs.length}`, VIEW_WIDTH - 8 * SCALE, 26 * SCALE);
     }
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.

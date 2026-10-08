@@ -7,10 +7,12 @@
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
     min-width: 320px;
-    min-height: 100vh;
     margin: 0;
+    overflow: hidden; /* strona zawiera tylko grę, która zawsze wypełnia okno, więc nie ma przewijania */
     background: radial-gradient(ellipse at top, #1b2937, #10151c 65%);
 }
 
@@ -26,24 +28,23 @@ body {
 h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
 .intro { margin: .75rem 0 0; color: #aab7c5; }
 
+/* Gra (menu, rozgrywka i pauza) zawsze wypełnia całe okno przeglądarki. Dzięki temu strona
+   nigdy nie jest wyższa niż okno i nie ma scrollbara, a skalowaniem obrazu zajmuje się viewport.js. */
 .game {
-    position: relative;
+    position: fixed;
+    z-index: 10;
+    inset: 0;
     width: 100%;
-    padding: .75rem;
-    border: 1px solid #354453;
-    border-radius: 1rem;
+    height: 100vh;
+    height: 100dvh; /* na telefonach: wysokość bez paska adresu */
     background: #17212c;
-    box-shadow: 0 1.5rem 4rem #0005;
 }
 
 .game__viewport {
     display: block;
     image-rendering: pixelated; /* gdyby przeglądarka skalowała canvas, piksele zostają ostre */
     width: 100%;
-    aspect-ratio: 16 / 9;
-    overflow: hidden;
-    border: 1px solid #435464;
-    border-radius: .5rem;
+    height: 100%;
     background: #111a23;
 }
 
@@ -59,7 +60,6 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
     justify-content: center;
     gap: .75rem;
     padding: 1.5rem;
-    border-radius: 1rem;
     background: rgb(10 15 22 / .62);
     backdrop-filter: blur(3px);
 }
@@ -147,7 +147,10 @@ kbd {
 .menu__button.bomb-panel__option { width: 100%; padding: 1.1rem 1.4rem; font-size: 1.15rem; text-align: left; }
 
 /* Menu główne: lista poziomów (karty tworzy main.js). */
-.menu[data-screen="main"] { overflow-y: auto; justify-content: safe center; }
+/* Gdyby lista poziomów nie mieściła się w bardzo małym oknie, menu można przewijać kółkiem myszy,
+   ale bez widocznego paska przewijania. */
+.menu[data-screen="main"] { overflow-y: auto; justify-content: safe center; scrollbar-width: none; }
+.menu[data-screen="main"]::-webkit-scrollbar { display: none; }
 
 .level-list {
     display: grid;
@@ -206,24 +209,6 @@ body[data-state="playing"] .controls-corner { opacity: .5; }
 body[data-state="bomb"] .controls-corner,
 body[data-state="won"] .controls-corner,
 body[data-state="lost"] .controls-corner { display: none; }
-
-/* ---------- Rozszerzony układ podczas rozgrywki ---------- */
-
-body.game-active { overflow: hidden; }
-body.game-active .page { width: 100%; height: 100vh; margin: 0; padding: 0; }
-body.game-active .page__header { display: none; }
-body.game-active .game {
-    position: fixed;
-    z-index: 10;
-    inset: 0;
-    width: 100%;
-    height: 100vh;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-}
-body.game-active .game__viewport { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
-body.game-active .menu { border-radius: 0; }
 
 /* Kursor jest ukryty tylko podczas samej gry (w menu i pauzie jest widoczny). */
 body.cursor-hidden .game { cursor: none; }

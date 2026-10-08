@@ -1,5 +1,5 @@
 // Viewport odpowiada tylko za canvas: rozdzielczość, skalowanie i czyszczenie ekranu.
-// Gra ma stałą, wirtualną rozdzielczość VIEW_WIDTH x VIEW_HEIGHT (320 x 180 px) i jest
+// Gra ma stałą, wirtualną rozdzielczość VIEW_WIDTH x VIEW_HEIGHT (patrz config.js) i jest
 // skalowana do okna tak, żeby piksel gry zawsze był kwadratem o równym rozmiarze.
 import { VIEW_WIDTH, VIEW_HEIGHT, PIXEL_PERFECT } from "./config.js";
 
@@ -22,7 +22,7 @@ export function createViewport(canvas) {
     resize();
 
     // Wywołaj na początku każdej klatki. Zwraca kontekst, na którym rysujesz
-    // we współrzędnych gry (0..320 x 0..180).
+    // we współrzędnych gry (0..VIEW_WIDTH x 0..VIEW_HEIGHT).
     function begin() {
         // Czyszczenie całego canvasa kolorem pasków (letterbox).
         context.setTransform(1, 0, 0, 1, 0, 0);
@@ -30,7 +30,7 @@ export function createViewport(canvas) {
         context.fillRect(0, 0, canvas.width, canvas.height);
 
         // Skala: największa, przy której cały ekran gry się mieści. W trybie pixel-perfect
-        // zaokrąglona w dół do liczby całkowitej (okno mniejsze niż 320x180 skaluje ułamkowo).
+        // zaokrąglona w dół do liczby całkowitej (okno mniejsze niż ekran gry skaluje ułamkowo).
         const fit = Math.min(canvas.width / VIEW_WIDTH, canvas.height / VIEW_HEIGHT);
         scale = PIXEL_PERFECT && fit >= 1 ? Math.floor(fit) : fit;
 

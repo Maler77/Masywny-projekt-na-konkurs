@@ -1,11 +1,11 @@
-import { getScale, snap } from "./config.js";
+import { TILE, getScale, snap } from "./config.js";
 
 // ============================================================================
 //  TEKSTURY
 //  Tu wybierasz grafiki z folderu assets/ dla wszystkich obiektów w grze
 //  oraz dla elementów interfejsu (menu, okno z pytaniem, ekrany wygranej i przegranej).
 //
-//  PIXEL ART: 1 piksel obrazka = 1 piksel gry (1/16 tila). Obrazki rysuj w skali 1:1,
+//  PIXEL ART: 1 piksel obrazka = 1 piksel gry (1/32 tila). Obrazki rysuj w skali 1:1,
 //  gra sama skaluje je do okna (patrz config.js i viewport.js). Wygładzanie jest wyłączone.
 //
 //  JAK UŻYĆ TEKSTURY DLA ISTNIEJĄCEGO OBIEKTU
@@ -14,15 +14,15 @@ import { getScale, snap } from "./config.js";
 //
 //  ROZMIAR OBRAZKA Z TEKSTURY (trim: true)
 //    Obrazek jest najpierw przycinany z przezroczystych brzegów (pusty margines znika),
-//    a rozmiar obiektu w grze to rozmiar przyciętego obrazka. Np. gracz 16x24 px z pustymi
-//    bokami przycięty do 12x24 ma w grze 12x24 px (0,75 x 1,5 tila).
+//    a rozmiar obiektu w grze to rozmiar przyciętego obrazka. Np. gracz 32x48 px z pustymi
+//    bokami przycięty do 24x48 ma w grze 24x48 px (0,75 x 1,5 tila).
 //    Bez tekstury obiekt ma rozmiar zastępczy (patrz game.js).
 //    HITBOX jest osobno (patrz PLAYER_HITBOX i BOMB_HITBOX w game.js): domyślnie ręczny,
 //    a po wpisaniu "auto" równy rozmiarowi przyciętego obrazka.
 //
 //  JAK DODAĆ TEKSTURĘ NOWEMU OBIEKTOWI W ŚWIECIE GRY (np. monecie)
 //    1) Dodaj wpis poniżej:      coin: { src: "assets/coin.png", trim: true },
-//    2) W obiekcie wpisz nazwę:  { x: 500, y: 300, w: 16, h: 16, texture: "coin", color: "gold" }
+//    2) W obiekcie wpisz nazwę:  { x: 500, y: 300, w: 32, h: 32, texture: "coin", color: "gold" }
 //       (rozmiar obrazka pobierzesz przez getTextureSize("coin"))
 //    3) W funkcji draw() wywołaj: drawBox(ctx, coin);
 //
@@ -47,12 +47,12 @@ export const TEXTURES = {
     // Gracz. Obrazek powinien patrzeć w PRAWO, bo przy chodzeniu w lewo jest odbijany.
     player: { src: "assets/player1.png", trim: true },
 
-    // Platformy, podłoga i ściany: powtarzany kafelek 16x16.
-    platform: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 }, // np. "assets/platform.png"
-    ground: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 },   // np. "assets/ground.png"
-    wall: { src: null, mode: "tile", tileWidth: 16, tileHeight: 16 },     // ściany szybu (poziom 4)
+    // Platformy, podłoga i ściany: powtarzany kafelek o rozmiarze tila (TILE z config.js).
+    platform: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE }, // np. "assets/platform.png"
+    ground: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE },   // np. "assets/ground.png"
+    wall: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE },     // ściany szybu (poziom 4)
 
-    // Tło poziomu: rysowane w skali 1:1 (narysuj je na 320x180), powtarzane w poziomie.
+    // Tło poziomu: rysowane w skali 1:1 (narysuj je na rozmiar ekranu gry, 640x360), powtarzane w poziomie.
     background: { src: null, parallax: 0.3 },  // poziom 1, np. "assets/background.png"
     background2: { src: null, parallax: 0.3 },  // poziom 2
     background3: { src: null, parallax: 0.3 },  // poziom 3

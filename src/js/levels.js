@@ -3,7 +3,7 @@
 //  Każdy poziom to wpis w tablicy LEVELS na dole pliku. Menu główne samo tworzy
 //  z niej listę poziomów, więc nowy poziom to tylko nowy wpis (nic więcej nie trzeba).
 //
-//  JEDNOSTKI: piksele gry. 1 tile = 16 px (stała TILE), ekran ma 320 x 180 px (20 x 11,25 tila).
+//  JEDNOSTKI: piksele gry. 1 tile = 32 px (stała TILE), ekran ma 640 x 360 px (20 x 11,25 tila).
 //  Współrzędne: x rośnie w prawo, y w dół, (0, 0) to lewy górny róg poziomu.
 //
 //  POLA POZIOMU
@@ -13,25 +13,29 @@
 //    background  warstwy tła: nazwy tekstur z textures.js, od najdalszej (opcjonalnie)
 //    timeLimit   czas na rozbrojenie wszystkich bomb, w sekundach
 //    width       szerokość poziomu w px
-//    height      wysokość poziomu w px (opcjonalnie, domyślnie 180 = jeden ekran)
+//    height      wysokość poziomu w px (opcjonalnie, domyślnie 360 = jeden ekran)
 //    spawn       { x, y } miejsce startu: dolny środek gracza (x = środek, y = powierzchnia pod stopami)
 //    platforms   lista platform (patrz funkcje pomocnicze niżej)
 //    bombs       lista bomb z pytaniami (patrz funkcja bomb() niżej)
 //    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
 //
-//  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 16 x 24 px)
-//    do góry ok. 37 px (2,3 tila), w poziomie ok. 55-80 px (zależnie od różnicy wysokości
-//    i szerokości hitboxa gracza), z dashem do ok. 130 px. Bezpiecznie: różnica wysokości do 24 px i odstęp do 32-40 px.
-//    Odstęp ok. 104 px na tej samej wysokości jest możliwy TYLKO z dashem.
-//    Nad platformą wiszącą nad podłogą zostaw co najmniej 28 px, żeby gracz mógł pod nią przejść
+//  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
+//    do góry ok. 74 px (2,3 tila), w poziomie ok. 110-156 px (zależnie od różnicy wysokości
+//    i szerokości hitboxa gracza), z dashem do ok. 260 px. Bezpiecznie: różnica wysokości
+//    do 48 px (1,5 tila) i odstęp do 64-80 px.
+//    Odstęp ok. 208 px na tej samej wysokości jest możliwy TYLKO z dashem.
+//    Nad platformą wiszącą nad podłogą zostaw co najmniej 56 px, żeby gracz mógł pod nią przejść
 //    (albo dociągnij platformę do podłogi jak blok).
 //
 //  WALL-JUMP (Spacja przy ścianie w powietrzu)
-//    Ścianą jest każda platforma sięgająca przy graczu co najmniej 18 px (platformy grube na
+//    Ścianą jest każda platforma sięgająca przy graczu co najmniej 36 px (platformy grube na
 //    1 tile to nie ściany). Odbicie od ściany z tej samej strony co poprzednie ma cooldown
 //    (SAME_WALL_COOLDOWN w game.js), a od ściany z przeciwnej strony nie ma. Dlatego po jednej
 //    ścianie nie da się wspinać, a w szybie (dwie ściany naprzeciw siebie) tak.
-//    Szyb szeroki na 3 tile (48 px, odstęp między ścianami) jest wygodny.
+//    Szyb szeroki na 3 tile (96 px, odstęp między ścianami) jest wygodny.
+//
+//  PRZELICZANIE PO ZMIANIE TILE: fizyka i rozmiary w game.js skalują się same (SCALE w config.js),
+//  ale współrzędne w tym pliku są w pikselach, więc trzeba je pomnożyć przez nowy TILE / stary TILE.
 // ============================================================================
 
 import { TILE, VIEW_HEIGHT } from "./config.js";
@@ -42,9 +46,11 @@ export { TILE };
 // texture to nazwa z textures.js, color to kolor zastępczy bez tekstury.
 export const platform = (x, y, w, h = TILE, texture = "platform") => ({ x, y, w, h, texture, color: "#24343d" });
 
-// Podłoga na całą szerokość poziomu, na samym dole (górna krawędź 20 px nad dołem poziomu,
-// czyli dla ekranu 180 px na y = 160 = 10 tili). Dla wyższego poziomu podaj jego wysokość.
-export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHeight - 20, width, 20, "ground");
+// Podłoga na całą szerokość poziomu, na samym dole. Ma grubość 1,25 tila, więc jej górna krawędź
+// jest 40 px nad dołem poziomu (dla ekranu 360 px: y = 320 = 10 tili). Dla wyższego poziomu
+// podaj jego wysokość.
+const GROUND_HEIGHT = TILE * 1.25;
+export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHeight - GROUND_HEIGHT, width, GROUND_HEIGHT, "ground");
 
 // Enemy anchor: x is center, y is the surface under their feet. Optional patrol
 // bounds are center-X coordinates, with an optional speed in pixels per second.
@@ -53,7 +59,7 @@ export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
 const LETTERS = ["A", "B", "C"];
 
 // Bomba: x = środek, y = powierzchnia, na której stoi (bomba stoi dolnym środkiem na tym punkcie).
-// Rozmiar obrazka wynika z tekstury (bez tekstury 16 x 16 px), a hitbox z BOMB_HITBOX w game.js.
+// Rozmiar obrazka wynika z tekstury (bez tekstury 32 x 32 px), a hitbox z BOMB_HITBOX w game.js.
 // Opcjonalnie możesz podać własny hitbox bomby: dopisz pole hitbox: { w, h } albo "auto".
 //   correct   indeks prawidłowej odpowiedzi: 0 = A, 1 = B, 2 = C
 //   question  tekst na górze okna (bez niego: placeholder mówiący, która odpowiedź jest dobra)
@@ -75,28 +81,28 @@ export const LEVELS = [
         thumbnail: "level1Thumbnail",
         background: ["background"],
         timeLimit: 60,
-        width: 800, // 50 tili
-        spawn: { x: 32, y: 160 },
+        width: 1600, // 50 tili
+        spawn: { x: 64, y: 320 },
         platforms: [
-            ground(800),
-            platform(96, 136, 48, 24),   // blok do podłogi
-            platform(176, 112, 48),
-            platform(256, 88, 48),
-            platform(336, 112, 48),
-            platform(392, 144, 16, 16),  // mały blok na podłodze
-            platform(416, 104, 64),
-            platform(500, 80, 48),
-            platform(584, 104, 48),
-            platform(664, 136, 64, 24),  // blok do podłogi
+            ground(1600),
+            platform(192, 272, 96, 48),   // blok do podłogi
+            platform(352, 224, 96),
+            platform(512, 176, 96),
+            platform(672, 224, 96),
+            platform(784, 288, 32, 32),  // mały blok na podłodze
+            platform(832, 208, 128),
+            platform(1000, 160, 96),
+            platform(1168, 208, 96),
+            platform(1328, 272, 128, 48),  // blok do podłogi
         ],
         bombs: [
-            bomb(280, 88, 1),
-            bomb(524, 80, 2),
-            bomb(696, 136, 0),
+            bomb(560, 176, 1),
+            bomb(1048, 160, 2),
+            bomb(1392, 272, 0),
         ],
         enemies: [
-            enemy("weak", 200, 112, { id: "weak-1", patrol: { minX: 184, maxX: 216, speed: 24 } }),
-            enemy("strong", 448, 104, { id: "strong-1", patrol: { minX: 428, maxX: 468, speed: 18 } }),
+            enemy("weak", 400, 224, { id: "weak-1", patrol: { minX: 368, maxX: 432, speed: 48 } }),
+            enemy("strong", 896, 208, { id: "strong-1", patrol: { minX: 856, maxX: 936, speed: 36 } }),
         ],
     },
     {
@@ -105,32 +111,32 @@ export const LEVELS = [
         thumbnail: "level2Thumbnail",
         background: ["background2"],
         timeLimit: 70,
-        width: 928, // 58 tili
-        spawn: { x: 32, y: 160 },
+        width: 1856, // 58 tili
+        spawn: { x: 64, y: 320 },
         platforms: [
-            ground(928),
+            ground(1856),
             // pierwsza wieża schodów
-            platform(88, 136, 40, 24),   // blok do podłogi
-            platform(140, 112, 40),
-            platform(192, 88, 40),
-            platform(244, 64, 48),
+            platform(176, 272, 80, 48),   // blok do podłogi
+            platform(280, 224, 80),
+            platform(384, 176, 80),
+            platform(488, 128, 96),
             // zejście
-            platform(328, 96, 40),
-            platform(392, 112, 48),
-            platform(464, 128, 16, 32),  // słupek do podłogi
+            platform(656, 192, 80),
+            platform(784, 224, 96),
+            platform(928, 256, 32, 64),  // słupek do podłogi
             // druga wieża
-            platform(504, 112, 40),
-            platform(568, 96, 40),
-            platform(632, 72, 40),
+            platform(1008, 224, 80),
+            platform(1136, 192, 80),
+            platform(1264, 144, 80),
             // koniec poziomu
-            platform(716, 136, 48, 24),  // blok do podłogi
-            platform(800, 112, 56),
+            platform(1432, 272, 96, 48),  // blok do podłogi
+            platform(1600, 224, 112),
         ],
         bombs: [
-            bomb(268, 64, 2),
-            bomb(652, 72, 0),
-            bomb(740, 136, 1),
-            bomb(828, 112, 2),
+            bomb(536, 128, 2),
+            bomb(1304, 144, 0),
+            bomb(1480, 272, 1),
+            bomb(1656, 224, 2),
         ],
     },
     {
@@ -139,36 +145,36 @@ export const LEVELS = [
         thumbnail: "level3Thumbnail",
         background: ["background3"],
         timeLimit: 75,
-        width: 1200, // 75 tili
-        spawn: { x: 32, y: 160 },
+        width: 2400, // 75 tili
+        spawn: { x: 64, y: 320 },
         platforms: [
-            ground(1200),
+            ground(2400),
             // pierwszy podjazd
-            platform(100, 136, 32, 24),  // blok do podłogi
-            platform(160, 112, 32),
-            platform(220, 88, 32),
-            platform(288, 64, 40),
+            platform(200, 272, 64, 48),  // blok do podłogi
+            platform(320, 224, 64),
+            platform(440, 176, 64),
+            platform(576, 128, 80),
             // zejście
-            platform(376, 96, 32),
-            platform(448, 112, 32),
+            platform(752, 192, 64),
+            platform(896, 224, 64),
             // schody z bloków na podłodze
-            platform(568, 144, 16, 16),
-            platform(596, 120, 16, 40),
+            platform(1136, 288, 32, 32),
+            platform(1192, 240, 32, 80),
             // drugi podjazd
-            platform(668, 136, 48, 24),  // blok do podłogi
-            platform(748, 112, 32),
-            platform(812, 88, 32),
-            platform(880, 64, 40),
+            platform(1336, 272, 96, 48),  // blok do podłogi
+            platform(1496, 224, 64),
+            platform(1624, 176, 64),
+            platform(1760, 128, 80),
             // zejście do mety
-            platform(968, 96, 32),
-            platform(1040, 112, 32),
-            platform(1112, 104, 56),
+            platform(1936, 192, 64),
+            platform(2080, 224, 64),
+            platform(2224, 208, 112),
         ],
         bombs: [
-            bomb(308, 64, 0),
-            bomb(604, 120, 1),
-            bomb(900, 64, 2),
-            bomb(1140, 104, 1),
+            bomb(616, 128, 0),
+            bomb(1208, 240, 1),
+            bomb(1800, 128, 2),
+            bomb(2280, 208, 1),
         ],
     },
     {
@@ -177,29 +183,29 @@ export const LEVELS = [
         thumbnail: "level4Thumbnail",
         background: ["background4"],
         timeLimit: 120,
-        width: 736,   // 46 tili
-        height: 500,  // wyższy niż ekran: kamera podąża za graczem w pionie
-        spawn: { x: 32, y: 480 },
+        width: 1472,   // 46 tili
+        height: 1000,  // wyższy niż ekran: kamera podąża za graczem w pionie
+        spawn: { x: 64, y: 960 },
         platforms: [
-            ground(736, 500),
+            ground(1472, 1000),
             // bomba na rozgrzewkę, zwykły skok
-            platform(128, 456, 48, 24),  // blok do podłogi
-            // SZYB: dwie ściany naprzeciw siebie (odstęp 48 = 3 tile), wspinaczka odbijaniem się od nich.
-            // Lewa ściana kończy się 32 px nad podłogą: pod nią wchodzi się do szybu.
-            platform(256, 192, 16, 256, "wall"),
-            platform(320, 192, 16, 288, "wall"),
+            platform(256, 912, 96, 48),  // blok do podłogi
+            // SZYB: dwie ściany naprzeciw siebie (odstęp 96 = 3 tile), wspinaczka odbijaniem się od nich.
+            // Lewa ściana kończy się 64 px (2 tile) nad podłogą: pod nią wchodzi się do szybu.
+            platform(512, 384, 32, 512, "wall"),
+            platform(640, 384, 32, 576, "wall"),
             // półka na szczycie szybu
-            platform(336, 192, 88),
-            // SKOK Z DASHEM: odstęp 104 px (bez dasha da się maks. ok. 78, z dashem ok. 130)
-            platform(528, 192, 64),
+            platform(672, 384, 176),
+            // SKOK Z DASHEM: odstęp 208 px (bez dasha da się maks. ok. 156, z dashem ok. 260)
+            platform(1056, 384, 128),
             // koniec poziomu: zwykły skok w górę
-            platform(624, 168, 64),
+            platform(1248, 336, 128),
         ],
         bombs: [
-            bomb(152, 456, 1),
-            bomb(376, 192, 2),
-            bomb(560, 192, 0),
-            bomb(656, 168, 1),
+            bomb(304, 912, 1),
+            bomb(752, 384, 2),
+            bomb(1120, 384, 0),
+            bomb(1312, 336, 1),
         ],
     },
 ];

@@ -1,6 +1,6 @@
-import { getScale, snap } from "./config.js";
+import { SCALE, getScale, snap } from "./config.js";
 
-// Kamera: przesuwa "okno" (320 x 180 px) po większym poziomie i płynnie goni gracza.
+// Kamera: przesuwa "okno" (ekran gry) po większym poziomie i płynnie goni gracza.
 
 export function createCamera({
     viewWidth,
@@ -9,7 +9,7 @@ export function createCamera({
     levelHeight,
     smoothing = 6,   // poziomo: im większa wartość, tym szybciej kamera dogania gracza
     smoothingY = 8,  // pionowo (trochę szybciej, żeby nie zgubić gracza przy szybkim spadaniu)
-    deadZoneY = 30,  // pionowo (w px gry): o ile gracz może odejść od środka ekranu, zanim kamera ruszy
+    deadZoneY = 30 * SCALE,  // pionowo (w px gry): o ile gracz może odejść od środka ekranu, zanim kamera ruszy
 }) {
     // Poziomo kamera zawsze dąży do gracza. Pionowo ma "strefę martwą": drobne skoki
     // (np. po płaskim terenie) nie bujają obrazem, a kamera przesuwa się dopiero, gdy gracz

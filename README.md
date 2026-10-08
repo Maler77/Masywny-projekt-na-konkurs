@@ -25,7 +25,7 @@ src/
   js/viewport.js Renderowanie i skalowanie obszaru gry
 ```
 
-Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij grę” uruchamia rozgrywkę i prosi przeglądarkę o tryb fullscreen. Menu pauzy pozostaje na pełnym ekranie podczas gry, gdy przeglądarka obsługuje blokadę klawisza Esc; przy braku tej obsługi Escape może wyjść z trybu przeglądarki, a gra pokaże menu pauzy w układzie wypełniającym stronę. Przycisk „Menu główne” kończy fullscreen. Obszar gry ma układ współrzędnych 960 × 540 i tymczasowe tło. Przy proporcjach innych niż 16:9 renderer zachowuje proporcje świata i dodaje pasy.
+Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij grę” uruchamia rozgrywkę i prosi przeglądarkę o tryb fullscreen. Menu pauzy pozostaje na pełnym ekranie podczas gry, gdy przeglądarka obsługuje blokadę klawisza Esc; przy braku tej obsługi Escape może wyjść z trybu przeglądarki, a gra pokaże menu pauzy w układzie wypełniającym stronę. Przycisk „Menu główne” kończy fullscreen. Obszar gry ma rozdzielczość 640 × 360 px (20 × 11,25 tila po 32 px, patrz `src/js/config.js`) i tymczasowe tło. Obraz jest skalowany do okna całkowitą skalą, żeby piksele były zawsze równe; przy proporcjach innych niż 16:9 renderer dodaje pasy. Jednostką w kodzie jest piksel gry (1/32 tila).
 
 ## Przeciwnicy
 
