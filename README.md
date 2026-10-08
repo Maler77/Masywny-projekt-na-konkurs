@@ -46,3 +46,11 @@ platform(400, 200, 96, 16, { grappleable: true });
 ## Grappling hook
 
 Press Q while facing a grappleable point within `160 * SCALE` game pixels (320 px with the current tile size) to attach. Solid platforms block the hook path. The rope swings with gravity and preserves momentum; left and right add swing force. While attached, W/Up shortens the rope and S/Down lengthens it. Space releases the rope and keeps swing momentum. Press Q again to switch to another reachable target immediately, or release if there is no other target. A full release starts the 0.5-second regrapple cooldown. The last detached anchor stays unavailable for 0.5 seconds. Grapple targets are level platforms marked with `grappleable: true` and can be listed with `game.getGrappleTargets()`.
+
+## Editing bomb questions
+
+All question content is in `src/data/questions.json`. Edit this file with a text editor; questions and answers do not need to be changed in JavaScript.
+
+Each question is one object inside the JSON array. Give it a unique, non-empty `id`, write its `question`, provide exactly three non-empty strings in `answers`, and set `correctAnswer` to the correct answer's zero-based position: `0` for the first answer, `1` for the second, or `2` for the third. When adding another object, put a comma after the previous object, but not after the final object. Keep the file valid JSON.
+
+The game validates the file at startup and reports a clear error in the browser console if it cannot be loaded or any question is malformed. Run the local HTTP server described above so the browser can fetch the JSON file.

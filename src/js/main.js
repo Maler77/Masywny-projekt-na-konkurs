@@ -4,6 +4,15 @@ import { createGame, formatTime } from "./game.js";
 import { createMenu } from "./menu.js";
 import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
+import { createQuestionQueue, loadQuestions } from "./questions.js";
+
+let questionQueue;
+try {
+    questionQueue = createQuestionQueue(await loadQuestions());
+} catch (error) {
+    console.error("Question setup failed:", error);
+    throw error;
+}
 
 const canvas = document.querySelector(".game__viewport");
 
@@ -90,8 +99,11 @@ const LETTERS = ["A", "B", "C"];
 let state = "menu";
 let debug = false;      // tryb debug włączany klawiszem "/"
 let activeBomb = null;  // bomba, której pytanie jest teraz otwarte
+let activeQuestion = null;
+const assignedQuestions = new Map();
 let currentLevel = 0;   // indeks aktualnego poziomu w LEVELS
 let ignoreEscapeUntil = 0;
+let pausedFromState = "playing";
 
 // Który ekran menu (data-screen w index.html) odpowiada któremu stanowi.
 const SCREEN_FOR_STATE = {
@@ -131,6 +143,8 @@ function startGame(levelIndex = currentLevel) {
     currentLevel = levelIndex;
     game.loadLevel(LEVELS[levelIndex]);
     activeBomb = null;
+    activeQuestion = null;
+    pausedFromState = "playing";
     setState("playing");
     enterFullscreen();
 }
@@ -173,17 +187,21 @@ function isFullscreen() {
 }
 
 function pauseGame() {
-    if (state === "playing") setState("paused");
+    if (state === "playing" || state === "bomb") {
+        pausedFromState = state;
+        setState("paused");
+    }
 }
 
 function resumeGame() {
-    if (state === "paused") setState("playing");
+    if (state === "paused") setState(pausedFromState);
 }
 
 // "Menu główne" z pauzy i z ekranów wygranej/przegranej.
 function quitToMenu() {
     game.reset();
     activeBomb = null;
+    activeQuestion = null;
     exitFullscreen();
     setState("menu");
 }
@@ -198,7 +216,7 @@ document.addEventListener("keydown", (event) => {
 function onFullscreenChange() {
     // If the browser exits fullscreen (for example with Escape where keyboard
     // locking is unavailable), preserve the page-filling pause screen.
-    if (!isFullscreen() && state === "playing") {
+    if (!isFullscreen() && (state === "playing" || state === "bomb")) {
         ignoreEscapeUntil = performance.now() + 300;
         pauseGame();
     }
@@ -210,23 +228,31 @@ document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // Otwiera okno z pytaniem dla bomby (E przy bombie).
 function openBomb(bomb) {
+    if (!bomb || bomb.defused) return;
+    const bombKey = `${currentLevel}:${bomb.id}`;
+    let question = assignedQuestions.get(bombKey);
+    if (!question) {
+        question = questionQueue.next();
+        assignedQuestions.set(bombKey, question);
+    }
     activeBomb = bomb;
-    bombTitle.textContent = bomb.question;
+    activeQuestion = question;
+    bombTitle.textContent = question.question;
     bombOptions.forEach((button, index) => {
-        const text = bomb.options[index];
-        button.hidden = text === undefined;
-        button.textContent = `${LETTERS[index]}. ${text ?? ""}`;
+        button.hidden = false;
+        button.textContent = `${LETTERS[index]}. ${question.answers[index]}`;
     });
     setState("bomb");
 }
 
 // Zła odpowiedź = przegrana, dobra = bomba rozbrojona (a po ostatniej wygrana).
 function answerBomb(index) {
-    if (state !== "bomb" || !activeBomb) return;
+    if (state !== "bomb" || !activeBomb || !activeQuestion || !Number.isInteger(index) || index < 0 || index > 2) return;
 
-    if (index === activeBomb.correct) {
+    if (index === activeQuestion.correctAnswer) {
         game.defuse(activeBomb);
         activeBomb = null;
+        activeQuestion = null;
         if (game.allDefused()) winGame();
         else setState("playing");
     } else {
@@ -236,6 +262,7 @@ function answerBomb(index) {
 
 function loseGame(reason) {
     activeBomb = null;
+    activeQuestion = null;
     loseReason.textContent = reason;
     setState("lost");
 }
@@ -275,14 +302,10 @@ function frame(now) {
 
     if (input.debugPressed()) debug = !debug;
 
-    // Esc: w grze pauzuje, w pauzie wznawia, w oknie bomby je zamyka.
+    // Esc pauses or resumes gameplay; an open bomb question remains active while paused.
     if (input.escapePressed() && performance.now() >= ignoreEscapeUntil) {
-        if (state === "playing") pauseGame();
+        if (state === "playing" || state === "bomb") pauseGame();
         else if (state === "paused") resumeGame();
-        else if (state === "bomb") {
-            activeBomb = null;
-            setState("playing");
-        }
     }
 
     if (state === "playing") {

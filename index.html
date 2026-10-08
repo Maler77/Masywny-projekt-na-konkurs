@@ -47,7 +47,7 @@
                 <button class="menu__button" type="button" data-action="quit">Menu główne</button>
             </div>
 
-            <!-- Okno z pytaniem (E przy bombie). Tekst i odpowiedzi ustawia main.js na podstawie levels.js -->
+            <!-- Question content is loaded from src/data/questions.json when a bomb is activated. -->
             <div class="menu" data-screen="bomb" role="dialog" aria-labelledby="bomb-title" hidden>
                 <div class="bomb-panel" data-texture="bombPanel">
                     <p class="bomb-panel__timer" id="bomb-timer"></p>
@@ -57,7 +57,7 @@
                         <button class="menu__button bomb-panel__option" type="button" data-action="answer" data-index="1"></button>
                         <button class="menu__button bomb-panel__option" type="button" data-action="answer" data-index="2"></button>
                     </div>
-                    <p class="menu__hint">Wybierz myszką lub klawiszami A, B, C. Esc wraca do gry (czas płynie dalej).</p>
+                    <p class="menu__hint">Wybierz myszką lub klawiszami A, B, C. Esc pauzuje; pytanie pozostaje otwarte.</p>
                 </div>
             </div>
 

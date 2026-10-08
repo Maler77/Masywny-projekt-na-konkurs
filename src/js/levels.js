@@ -16,7 +16,7 @@
 //    height      wysokość poziomu w px (opcjonalnie, domyślnie 360 = jeden ekran)
 //    spawn       { x, y } miejsce startu: dolny środek gracza (x = środek, y = powierzchnia pod stopami)
 //    platforms   lista platform (patrz funkcje pomocnicze niżej)
-//    bombs       lista bomb z pytaniami (patrz funkcja bomb() niżej)
+//    bombs       lista położeń bomb (pytania są w src/data/questions.json)
 //    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
@@ -71,23 +71,8 @@ export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHei
 // bounds are center-X coordinates, with an optional speed in pixels per second.
 export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
 
-const LETTERS = ["A", "B", "C"];
-
-// Bomba: x = środek, y = powierzchnia, na której stoi (bomba stoi dolnym środkiem na tym punkcie).
-// Rozmiar obrazka wynika z tekstury (bez tekstury 32 x 32 px), a hitbox z BOMB_HITBOX w game.js.
-// Opcjonalnie możesz podać własny hitbox bomby: dopisz pole hitbox: { w, h } albo "auto".
-//   correct   indeks prawidłowej odpowiedzi: 0 = A, 1 = B, 2 = C
-//   question  tekst na górze okna (bez niego: placeholder mówiący, która odpowiedź jest dobra)
-//   options   odpowiedzi A, B, C (domyślnie placeholdery)
-export function bomb(x, y, correct, question, options = ["Odpowiedź A", "Odpowiedź B", "Odpowiedź C"]) {
-    return {
-        x,
-        y,
-        correct,
-        question: question ?? `Placeholder: prawidłowa odpowiedź to ${LETTERS[correct]}`,
-        options,
-    };
-}
+// Bomba: x = środek, y = powierzchnia, na której stoi. Opcjonalny hitbox: { hitbox: { w, h } }.
+export const bomb = (x, y, options = {}) => ({ x, y, ...options });
 
 export const LEVELS = [
     {
@@ -114,9 +99,9 @@ export const LEVELS = [
             platform(1328, 272, 128, 48),  // blok do podłogi
         ],
         bombs: [
-            bomb(560, 176, 1),
-            bomb(1048, 160, 2),
-            bomb(1392, 272, 0),
+            bomb(560, 176),
+            bomb(1048, 160),
+            bomb(1392, 272),
         ],
         enemies: [
             enemy("weak", 400, 224, { id: "weak-1", patrol: { minX: 368, maxX: 432, speed: 48 } }),
@@ -151,10 +136,10 @@ export const LEVELS = [
             platform(1600, 224, 112),
         ],
         bombs: [
-            bomb(536, 128, 2),
-            bomb(1304, 144, 0),
-            bomb(1480, 272, 1),
-            bomb(1656, 224, 2),
+            bomb(536, 128),
+            bomb(1304, 144),
+            bomb(1480, 272),
+            bomb(1656, 224),
         ],
     },
     {
@@ -189,10 +174,10 @@ export const LEVELS = [
             platform(2224, 208, 112),
         ],
         bombs: [
-            bomb(616, 128, 0),
-            bomb(1208, 240, 1),
-            bomb(1800, 128, 2),
-            bomb(2280, 208, 1),
+            bomb(616, 128),
+            bomb(1208, 240),
+            bomb(1800, 128),
+            bomb(2280, 208),
         ],
     },
     {
@@ -220,10 +205,10 @@ export const LEVELS = [
             platform(1248, 336, 128),
         ],
         bombs: [
-            bomb(304, 912, 1),
-            bomb(752, 384, 2),
-            bomb(1120, 384, 0),
-            bomb(1312, 336, 1),
+            bomb(304, 912),
+            bomb(752, 384),
+            bomb(1120, 384),
+            bomb(1312, 336),
         ],
     },
 ];

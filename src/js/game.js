@@ -213,8 +213,9 @@ export function createGame(initialLevel) {
 
         // Pozycja bomby w danych to jej dolny środek: bomba startuje jako punkt w tym miejscu,
         // a syncSize() nadaje jej rozmiar hitboxa i obrazka, zachowując ten dolny środek.
-        bombs = next.bombs.map((data) => ({
+        bombs = next.bombs.map((data, index) => ({
             ...data,
+            id: data.id ?? `${next.id ?? next.name ?? "level"}-bomb-${index + 1}`,
             w: 0,
             h: 0,
             hitbox: data.hitbox ?? BOMB_HITBOX,
