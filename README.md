@@ -49,8 +49,8 @@ Press Q while facing a grappleable point within `160 * SCALE` game pixels (320 p
 
 ## Editing bomb questions
 
-All question content is in `src/data/questions.json`. Edit this file with a text editor; questions and answers do not need to be changed in JavaScript.
+All question content is in `src/data/questions.json`, grouped under `categories.easy`, `categories.medium`, and `categories.hard`. Edit this file with a text editor; questions and answers do not need to be changed in JavaScript. Levels choose a category through `questionCategory` in `src/js/levels.js` (Levels 1, 2-3, and 4 currently use easy, medium, and hard respectively).
 
-Each question is one object inside the JSON array. Give it a unique, non-empty `id`, write its `question`, provide exactly three non-empty strings in `answers`, and set `correctAnswer` to the correct answer's zero-based position: `0` for the first answer, `1` for the second, or `2` for the third. When adding another object, put a comma after the previous object, but not after the final object. Keep the file valid JSON.
+Add each question object to the array for its category. Give it a unique, non-empty `id` across the whole file, write its `question`, provide exactly three non-empty strings in `answers`, and set `correctAnswer` to the correct answer's zero-based position: `0` for the first answer, `1` for the second, or `2` for the third. When adding another object, put a comma after the previous object, but not after the final object in that category. Keep the file valid JSON and each category non-empty.
 
 The game validates the file at startup and reports a clear error in the browser console if it cannot be loaded or any question is malformed. Run the local HTTP server described above so the browser can fetch the JSON file.

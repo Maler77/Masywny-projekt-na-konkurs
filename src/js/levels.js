@@ -85,6 +85,7 @@ export const LEVELS = [
     {
         name: "Poziom 1",
         subtitle: "Rozgrzewka",
+        questionCategory: "easy",
         thumbnail: "level1Thumbnail",
         background: ["background"],
         timeLimit: 60,
@@ -122,6 +123,7 @@ export const LEVELS = [
     {
         name: "Poziom 2",
         subtitle: "Wieże",
+        questionCategory: "medium",
         thumbnail: "level2Thumbnail",
         background: ["background2"],
         timeLimit: 70,
@@ -160,6 +162,7 @@ export const LEVELS = [
     {
         name: "Poziom 3",
         subtitle: "Długa droga",
+        questionCategory: "medium",
         thumbnail: "level3Thumbnail",
         background: ["background3"],
         timeLimit: 75,
@@ -202,6 +205,7 @@ export const LEVELS = [
     {
         name: "Poziom 4",
         subtitle: "Szyb i dash",
+        questionCategory: "hard",
         thumbnail: "level4Thumbnail",
         background: ["background4"],
         timeLimit: 120,

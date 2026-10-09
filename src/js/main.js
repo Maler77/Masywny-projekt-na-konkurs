@@ -4,11 +4,20 @@ import { createGame, formatTime } from "./game.js";
 import { createMenu } from "./menu.js";
 import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
-import { createQuestionQueue, loadQuestions } from "./questions.js";
+import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
 
-let questionQueue;
+let questionQueues;
 try {
-    questionQueue = createQuestionQueue(await loadQuestions());
+    const questionsByCategory = await loadQuestions();
+    questionQueues = Object.fromEntries(QUESTION_CATEGORIES.map((category) => [
+        category,
+        createQuestionQueue(questionsByCategory[category]),
+    ]));
+    for (const level of LEVELS) {
+        if (!QUESTION_CATEGORIES.includes(level.questionCategory)) {
+            throw new Error(`Level "${level.name}" has an invalid questionCategory. Use easy, medium, or hard.`);
+        }
+    }
 } catch (error) {
     console.error("Question setup failed:", error);
     throw error;
@@ -232,7 +241,7 @@ function openBomb(bomb) {
     const bombKey = `${currentLevel}:${bomb.id}`;
     let question = assignedQuestions.get(bombKey);
     if (!question) {
-        question = questionQueue.next();
+        question = questionQueues[LEVELS[currentLevel].questionCategory].next();
         assignedQuestions.set(bombKey, question);
     }
     activeBomb = bomb;

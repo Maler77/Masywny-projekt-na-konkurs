@@ -1,92 +1,130 @@
-[
-  {
-    "id": "q001",
-    "question": "Jaka jest stolica Francji?",
-    "answers": ["Madryt", "Gejris", "Rzym"],
-    "correctAnswer": 1
-  },
-  {
-    "id": "q002",
-    "question": "Która planeta jest nazywana Czerwoną Planetą?",
-    "answers": ["Wenus", "Mars", "Jowisz"],
-    "correctAnswer": 1
-  },
-  {
-    "id": "q003",
-    "question": "Który ocean jest największy?",
-    "answers": ["Atlantycki", "Indyjski", "Spokojny"],
-    "correctAnswer": 2
-  },
-  {
-    "id": "q004",
-    "question": "Jaki jest wzór chemiczny wody?",
-    "answers": ["H2O", "CO2", "O2"],
-    "correctAnswer": 0
-  },
-  {
-    "id": "q005",
-    "question": "Ile wynosi 7 razy 8?",
-    "answers": ["54", "56", "64"],
-    "correctAnswer": 1
-  },
-  {
-    "id": "q006",
-    "question": "Kto napisał epopeję „Pan Tadeusz”?",
-    "answers": ["Juliusz Słowacki", "Henryk Sienkiewicz", "Adam Mickiewicz"],
-    "correctAnswer": 2
-  },
-  {
-    "id": "q007",
-    "question": "Która planeta znajduje się najbliżej Słońca?",
-    "answers": ["Merkury", "Wenus", "Ziemia"],
-    "correctAnswer": 0
-  },
-  {
-    "id": "q008",
-    "question": "Co oznacza zielone światło na sygnalizatorze?",
-    "answers": ["Zatrzymaj się", "Zawróć", "Możesz jechać"],
-    "correctAnswer": 2
-  },
-  {
-    "id": "q009",
-    "question": "Ile sekund ma jedna minuta?",
-    "answers": ["60", "100", "30"],
-    "correctAnswer": 0
-  },
-  {
-    "id": "q010",
-    "question": "Ile boków ma kwadrat?",
-    "answers": ["Trzy", "Cztery", "Pięć"],
-    "correctAnswer": 1
-  },
-  {
-    "id": "q011",
-    "question": "Jaka jest stolica Polski?",
-    "answers": ["Warszawa", "Kraków", "Gdańsk"],
-    "correctAnswer": 0
-  },
-  {
-    "id": "q012",
-    "question": "Który organ pompuje krew w ciele człowieka?",
-    "answers": ["Płuca", "Żołądek", "Serce"],
-    "correctAnswer": 2
-  },
-  {
-    "id": "q013",
-    "question": "Jak nazywa się naturalny satelita Ziemi?",
-    "answers": ["Mars", "Księżyc", "Słońce"],
-    "correctAnswer": 1
-  },
-  {
-    "id": "q014",
-    "question": "Ile centymetrów ma jeden metr?",
-    "answers": ["10", "50", "100"],
-    "correctAnswer": 2
-  },
-  {
-    "id": "q015",
-    "question": "Który z tych kolorów jest kolorem podstawowym w modelu RGB?",
-    "answers": ["Czerwony", "Brązowy", "Różowy"],
-    "correctAnswer": 0
+{
+  "categories": {
+    "easy": [
+      {
+        "id": "q001",
+        "question": "Jaka jest stolica Francji?",
+        "answers": ["Madryt", "Paryż", "Rzym"],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q002",
+        "question": "Która planeta jest nazywana Czerwoną Planetą?",
+        "answers": ["Wenus", "Mars", "Jowisz"],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q003",
+        "question": "Ile sekund ma jedna minuta?",
+        "answers": ["60", "100", "30"],
+        "correctAnswer": 0
+      }
+    ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    "medium": [
+      {
+        "id": "q004",
+        "question": "Jaki jest wzór chemiczny wody?",
+        "answers": ["H2O", "CO2", "O2"],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q005",
+        "question": "Ile wynosi 7 razy 8?",
+        "answers": ["54", "56", "64"],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q006",
+        "question": "Który ocean jest największy?",
+        "answers": ["Atlantycki", "Indyjski", "Spokojny"],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q007",
+        "question": "Która planeta znajduje się najbliżej Słońca?",
+        "answers": ["Merkury", "Wenus", "Ziemia"],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q008",
+        "question": "Co oznacza zielone światło na sygnalizatorze?",
+        "answers": ["Zatrzymaj się", "Zawróć", "Możesz jechać"],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q009",
+        "question": "Ile boków ma kwadrat?",
+        "answers": ["Trzy", "Cztery", "Pięć"],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q010",
+        "question": "Jaka jest stolica Polski?",
+        "answers": ["Warszawa", "Kraków", "Gdańsk"],
+        "correctAnswer": 0
+      },
+      {
+        "id": "q011",
+        "question": "Ile centymetrów ma jeden metr?",
+        "answers": ["10", "50", "100"],
+        "correctAnswer": 2
+      }
+    ],
+
+
+
+
+
+
+
+
+
+
+
+    "hard": [
+      {
+        "id": "q012",
+        "question": "Kto napisał epopeję „Pan Tadeusz”?",
+        "answers": ["Juliusz Słowacki", "Henryk Sienkiewicz", "Adam Mickiewicz"],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q013",
+        "question": "Który pierwiastek chemiczny ma symbol K?",
+        "answers": ["Wapń", "Potas", "Krypton"],
+        "correctAnswer": 1
+      },
+      {
+        "id": "q014",
+        "question": "Która planeta ma najkrótszy dzień, czyli obraca się najszybciej?",
+        "answers": ["Mars", "Saturn", "Jowisz"],
+        "correctAnswer": 2
+      },
+      {
+        "id": "q015",
+        "question": "Która część komórki odpowiada głównie za wytwarzanie energii?",
+        "answers": ["Mitochondrium", "Błona komórkowa", "Rybosom"],
+        "correctAnswer": 0
+      }
+    ]
   }
-]
+}
