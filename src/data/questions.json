@@ -3,126 +3,127 @@
     "easy": [
       {
         "id": "q001",
-        "question": "Jaka jest stolica Francji?",
-        "answers": ["Madryt", "Paryż", "Rzym"],
-        "correctAnswer": 1
+        "question": "Czym jest radykalizacja?",
+        "answers": ["Procesem przyjmowania coraz bardziej skrajnych poglądów, które mogą prowadzić do popierania przemocy.", "Uczeniem się nowych języków.", "Zmianą zainteresowań."],
+        "correctAnswer": 0
       },
       {
         "id": "q002",
-        "question": "Która planeta jest nazywana Czerwoną Planetą?",
-        "answers": ["Wenus", "Mars", "Jowisz"],
+        "question": "Czy radykalizacja zawsze prowadzi do przemocy?",
+        "answers": ["Tak, w każdym przypadku.", "Nie, ale w niektórych przypadkach może prowadzić do popierania lub stosowania przemocy.", "Tak, ale tylko u osób młodych."],
         "correctAnswer": 1
       },
       {
         "id": "q003",
-        "question": "Ile sekund ma jedna minuta?",
-        "answers": ["60", "100", "30"],
+        "question": "Co może sprzyjać radykalizacji?",
+        "answers": ["Rozwijanie zainteresowań.", "Poznawanie różnych kultur.", "Poczucie wykluczenia, krzywdy lub silnej niesprawiedliwości."],
+        "correctAnswer": 2
+      }
+      {
+        "id": "q004",
+        "question": "Czym jest ekstremizm?",
+        "answers": ["Skrajnym podejściem do ideologii lub przekonań, które może wiązać się z odrzucaniem podstawowych praw innych osób.", "Poznawanie różnych kultur.", "Zainteresowaniem polityką."],
+        "correctAnswer": 0
+      }
+      {
+        "id": "q005",
+        "question": "Gdzie może dochodzić do prób radykalizowania ludzi?",
+        "answers": ["Wyłącznie w szkole.", "W internecie, grupach społecznych i bezpośrednich kontaktach.", "Wyłącznie w telewizji."],
+        "correctAnswer": 1
+      }
+      {
+        "id": "q006",
+        "question": "Co należy zrobić, gdy ktoś namawia nas do przemocy wobec określonej grupy ludzi?",
+        "answers": ["Przyłączyć się, aby nie zostać odrzuconym.", "Udostępnić takie treści znajomym.", "Nie wspierać przemocy i porozmawiać z zaufaną osobą."],
+        "correctAnswer": 2
+      }
+      {
+        "id": "q007",
+        "question": "Czy posiadanie silnych poglądów oznacza automatycznie radykalizację?",
+        "answers": ["Nie, ważne jest m.in. to, czy poglądy wiążą się z akceptacją przemocy i odrzucaniem praw innych.", "Tak, każde silne przekonanie jest radykalne.", "Tak, jeśli ktoś interesuje się polityką."],
         "correctAnswer": 0
       }
     ],
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    
+    
+    
     "medium": [
       {
-        "id": "q004",
-        "question": "Jaki jest wzór chemiczny wody?",
-        "answers": ["H2O", "CO2", "O2"],
-        "correctAnswer": 0
-      },
-      {
-        "id": "q005",
-        "question": "Ile wynosi 7 razy 8?",
-        "answers": ["54", "56", "64"],
+        "id": "q001",
+        "question": "Który sygnał może wskazywać na proces radykalizacji?",
+        "answers": ["Rozpoczęcie uprawiania sportu.", "Coraz częstsze usprawiedliwianie przemocy wobec osób o odmiennych poglądach.", "Coraz częstsze usprawiedliwianie przemocy wobec osób o odmiennych poglądach."],
         "correctAnswer": 1
       },
       {
-        "id": "q006",
-        "question": "Który ocean jest największy?",
-        "answers": ["Atlantycki", "Indyjski", "Spokojny"],
+        "id": "q005",
+        "question": "Dlaczego media społecznościowe mogą sprzyjać radykalizacji?",
+        "answers": ["Zawsze pokazują wyłącznie prawdziwe informacje.", "Uniemożliwiają kontakt z osobami o podobnych poglądach.", "Mogą wzmacniać skrajne treści, dezinformację i zamykanie się w jednorodnych grupach poglądów."],
         "correctAnswer": 2
       },
       {
-        "id": "q007",
-        "question": "Która planeta znajduje się najbliżej Słońca?",
-        "answers": ["Merkury", "Wenus", "Ziemia"],
+        "id": "q006",
+        "question": "Co oznacza pojęcie „bańka informacyjna”?",
+        "answers": ["Sytuację, w której człowiek najczęściej spotyka się z informacjami potwierdzającymi jego przekonania.", "Program chroniący komputer przed wirusami.", "Grupę osób uczących się razem."],
         "correctAnswer": 0
       },
       {
+        "id": "q007",
+        "question": "Dlaczego osoby doświadczające wykluczenia mogą być bardziej podatne na radykalizację?",
+        "answers": ["Ponieważ każda osoba wykluczona popiera ekstremizm.", "Ponieważ grupy ekstremistyczne mogą wykorzystywać ich potrzebę przynależności, uznania i sprawiedliwości.", "Ponieważ wykluczenie zawsze prowadzi do agresji."],
+        "correctAnswer": 1
+      },
+      {
         "id": "q008",
-        "question": "Co oznacza zielone światło na sygnalizatorze?",
-        "answers": ["Zatrzymaj się", "Zawróć", "Możesz jechać"],
+        "question": "Czym jest propaganda ekstremistyczna?",
+        "answers": ["Każdą reklamą w internecie.", "Zwykłą wymianą opinii między znajomymi.", "Przekazem mającym przekonać ludzi do skrajnej ideologii, niekiedy poprzez manipulację, nienawiść lub usprawiedliwianie przemocy."],
         "correctAnswer": 2
       },
       {
         "id": "q009",
-        "question": "Ile boków ma kwadrat?",
-        "answers": ["Trzy", "Cztery", "Pięć"],
-        "correctAnswer": 1
-      },
-      {
-        "id": "q010",
-        "question": "Jaka jest stolica Polski?",
-        "answers": ["Warszawa", "Kraków", "Gdańsk"],
+        "question": "Jak najlepiej zweryfikować podejrzaną informację, która nawołuje do nienawiści?",
+        "answers": ["Sprawdzić jej źródło, porównać ją z wiarygodnymi publikacjami i ocenić kontekst.", "Uznać ją za prawdziwą, jeśli ma dużo polubień.", "Udostępnić ją, zanim zostanie usunięta."],
         "correctAnswer": 0
       },
       {
+        "id": "q010",
+        "question": "Co może pomóc w zapobieganiu radykalizacji w szkole?",
+        "answers": ["Zakazywanie każdej dyskusji na trudne tematy.", "Edukacja medialna, otwarty dialog i przeciwdziałanie dyskryminacji.", "Izolowanie uczniów o odmiennych poglądach."],
+        "correctAnswer": 1
+      },
+      {
         "id": "q011",
-        "question": "Ile centymetrów ma jeden metr?",
-        "answers": ["10", "50", "100"],
-        "correctAnswer": 2
+        "question": "Jakie działania mogą pomóc w przeciwdziałaniu radykalizacji w społeczności lokalnej?",
+        "answers": ["Tworzenie programów edukacyjnych, promowanie tolerancji i dialogu między różnymi grupami społecznymi.", "Ignorowanie problemu i unikanie rozmów o nim.", "Wspieranie wyłącznie jednej grupy społecznej."],
+        "correctAnswer": 0
       }
     ],
-
-
-
-
-
-
-
-
-
-
 
     "hard": [
       {
         "id": "q012",
-        "question": "Kto napisał epopeję „Pan Tadeusz”?",
-        "answers": ["Juliusz Słowacki", "Henryk Sienkiewicz", "Adam Mickiewicz"],
+        "question": "Który mechanizm najlepiej opisuje stopniową radykalizację?",
+        "answers": ["Jednorazowe przeczytanie kontrowersyjnego artykułu zawsze zmienia człowieka w ekstremistę.", "Każda osoba należąca do zamkniętej grupy staje się radykalna.", "Stopniowe przyjmowanie skrajnych przekonań, wzmacnianie podziału na „nas” i „wrogów” oraz coraz większa akceptacja przemocy."],
         "correctAnswer": 2
       },
       {
         "id": "q013",
-        "question": "Który pierwiastek chemiczny ma symbol K?",
-        "answers": ["Wapń", "Potas", "Krypton"],
-        "correctAnswer": 1
+        "question": "Dlaczego samo posiadanie radykalnych poglądów nie wystarcza, aby stwierdzić, że ktoś przygotowuje zamach?",
+        "answers": ["Ponieważ poglądy nie są tym samym co zamiar i konkretne działania, a ocenę zagrożenia trzeba opierać na szerszym kontekście i dowodach.", "Ponieważ osoby o skrajnych poglądach nigdy nie stosują przemocy.", "Ponieważ zamiaru przemocy nie da się ocenić w żadnych okolicznościach."],
+        "correctAnswer": 0
       },
       {
         "id": "q014",
-        "question": "Która planeta ma najkrótszy dzień, czyli obraca się najszybciej?",
-        "answers": ["Mars", "Saturn", "Jowisz"],
-        "correctAnswer": 2
+        "question": "Jaką rolę może odgrywać dehumanizacja w procesie radykalizacji?",
+        "answers": ["Zwiększa zrozumienie dla odmiennych grup.", "Przedstawia określoną grupę jako mniej ludzką, co może ułatwiać usprawiedliwianie jej krzywdzenia.", "Zawsze zmniejsza prawdopodobieństwo konfliktu."],
+        "correctAnswer": 1
       },
       {
         "id": "q015",
-        "question": "Która część komórki odpowiada głównie za wytwarzanie energii?",
-        "answers": ["Mitochondrium", "Błona komórkowa", "Rybosom"],
-        "correctAnswer": 0
+        "question": "Co oznacza „polaryzacja grupowa” w kontekście radykalizacji?",
+        "answers": ["Zmniejszanie różnic pomiędzy wszystkimi uczestnikami dyskusji.", "Rezygnację z własnych przekonań pod wpływem większości.", "Zjawisko, w którym dyskusje wewnątrz podobnie myślącej grupy mogą prowadzić do bardziej skrajnych stanowisk jej członków."],
+        "correctAnswer": 2
       }
     ]
   }
