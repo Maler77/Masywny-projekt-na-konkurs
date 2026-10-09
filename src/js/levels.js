@@ -18,6 +18,8 @@
 //    platforms   lista platform (patrz funkcje pomocnicze niżej)
 //    bombs       lista położeń bomb (pytania są w src/data/questions.json)
 //    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
+//    spikes      opcjonalna lista kolców, np. spike(x, y) albo spike(x, y, 3) (patrz niżej)
+//    hp          opcjonalnie: życie gracza na tym poziomie (domyślnie PLAYER_MAX_HP w game.js = 3)
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
 //    do góry ok. 74 px (2,3 tila), w poziomie ok. 110-156 px (zależnie od różnicy wysokości
@@ -67,6 +69,11 @@ export function platform(x, y, w, h = TILE, textureOrOptions = "platform", extra
 const GROUND_HEIGHT = TILE * 1.25;
 export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHeight - GROUND_HEIGHT, width, GROUND_HEIGHT, "ground");
 
+// Kolce: 1 tile szerokości i 1/4 tila wysokości (32 x 8 px) na każdą sztukę. x = lewa krawędź,
+// y = powierzchnia, na której kolce stoją (np. górna krawędź platformy). count = ile kolców obok
+// siebie (każdy 1 tile szerokości). Dotknięcie kolca zabiera graczowi 1 HP i cofa go do checkpointu.
+export const spike = (x, y, count = 1) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4 });
+
 // Enemy anchor: x is center, y is the surface under their feet. Optional patrol
 // bounds are center-X coordinates, with an optional speed in pixels per second.
 export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
@@ -102,6 +109,10 @@ export const LEVELS = [
             bomb(560, 176),
             bomb(1048, 160),
             bomb(1392, 272),
+        ],
+        spikes: [
+            spike(576, 320, 2),   // podłoga pod platformami przed drugą bombą
+            spike(1264, 320, 2),  // podłoga przed ostatnim blokiem
         ],
         enemies: [
             enemy("weak", 400, 224, { id: "weak-1", patrol: { minX: 368, maxX: 432, speed: 48 } }),
@@ -141,6 +152,10 @@ export const LEVELS = [
             bomb(1480, 272),
             bomb(1656, 224),
         ],
+        spikes: [
+            spike(600, 320, 2),   // podłoga między wieżami
+            spike(1360, 320, 1),
+        ],
     },
     {
         name: "Poziom 3",
@@ -179,6 +194,10 @@ export const LEVELS = [
             bomb(1800, 128),
             bomb(2280, 208),
         ],
+        spikes: [
+            spike(960, 320, 3),   // podłoga między zejściem a schodami z bloków
+            spike(1840, 320, 2),
+        ],
     },
     {
         name: "Poziom 4",
@@ -209,6 +228,9 @@ export const LEVELS = [
             bomb(752, 384),
             bomb(1120, 384),
             bomb(1312, 336),
+        ],
+        spikes: [
+            spike(384, 960, 2),   // podłoga między blokiem a wejściem do szybu
         ],
     },
 ];
