@@ -325,6 +325,10 @@ function frame(now) {
         }
 
         if (state === "playing") game.resolveEnemyAttack();
+
+        // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
+        // tylko cofają gracza do checkpointu (patrz game.js).
+        if (state === "playing" && game.isDead()) loseGame("Straciłeś całe życie!");
     } else if (state === "bomb") {
         // Postać stoi, ale czas leci dalej.
         game.tickTimer(dt);
