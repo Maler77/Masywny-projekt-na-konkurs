@@ -1,6 +1,8 @@
 import { SCALE } from "./config.js";
 
-// Wymiary, prędkości i odrzut są zapisane dla tila 16 px i mnożone przez SCALE (patrz config.js).
+// Wymiary i prędkości są zapisane dla tila 16 px i mnożone przez SCALE (patrz config.js).
+// Atak przeciwnika zabiera graczowi `damage` punktów życia, ale tylko wtedy, gdy gracz jest
+// PRZED przeciwnikiem (po stronie, w którą patrzy). Od tyłu przeciwnik nie rani (patrz game.js).
 // Enemy definitions and cuffing rules. Add new enemy behavior by registering another
 // type here and listing the methods that are allowed to cuff it.
 export const ENEMY_TYPES = Object.freeze({
@@ -12,7 +14,7 @@ export const ENEMY_TYPES = Object.freeze({
         cuffFromBackMethods: Object.freeze([]),
         armored: false,
         colors: Object.freeze({ body: "#c9823d", head: "#edb55f", visor: "#f2ead1", belt: "#5b382d" }),
-        attack: Object.freeze({ knockbackX: 116 * SCALE, knockbackY: -112 * SCALE, controlLock: 0.18, hitCooldown: 0.7 }),
+        attack: Object.freeze({ damage: 1 }),
     }),
     strong: Object.freeze({
         label: "Silny przeciwnik",
@@ -22,7 +24,7 @@ export const ENEMY_TYPES = Object.freeze({
         cuffFromBackMethods: Object.freeze(["interact"]),
         armored: true,
         colors: Object.freeze({ body: "#713e59", head: "#c65366", visor: "#f2d9ab", belt: "#343343" }),
-        attack: Object.freeze({ knockbackX: 184 * SCALE, knockbackY: -156 * SCALE, controlLock: 0.24, hitCooldown: 0.85 }),
+        attack: Object.freeze({ damage: 1 }),
     }),
 });
 
