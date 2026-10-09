@@ -49,6 +49,16 @@ const SAME_WALL_COOLDOWN = 1.0;
 // Bomby (pozycje i pytania są w levels.js).
 const INTERACT_RANGE = 28 * SCALE;   // odległość od środka bomby, w której działa klawisz E
 
+// Życie gracza. Na każdym poziomie gracz zaczyna z PLAYER_MAX_HP (poziom może to zmienić polem `hp`).
+// Kolce i ataki przeciwników zabierają po 1 HP, a gracz wraca do checkpointu (ostatnia rozbrojona
+// bomba albo początek poziomu). Przy 0 HP gra się kończy (ekran przegranej).
+const PLAYER_MAX_HP = 3;
+const INVULNERABLE_TIME = 1.5;  // tyle sekund po utracie HP gracz jest nietykalny (miga)
+const HURT_FLASH_TIME = 0.3;    // czas czerwonego błysku ekranu po obrażeniach
+
+// Kolce: 1 tile szerokości i 1/4 tila wysokości (32 x 8 px przy tilu 32 px). Pozycje są w levels.js.
+const SPIKE_HEIGHT = TILE / 4;
+
 // ROZMIAR OBRAZKA obiektów bez tekstury (z teksturą bierze się z przyciętego obrazka).
 const PLAYER_FALLBACK = { w: 16 * SCALE, h: 24 * SCALE };  // 1 x 1,5 tila
 const BOMB_FALLBACK = { w: 16 * SCALE, h: 16 * SCALE };    // 1 x 1 tila
@@ -122,8 +132,9 @@ export function createGame(initialLevel) {
         dashTime: 0,      // ile jeszcze trwa aktualny dash (0 = brak dashu)
         dashCooldown: 0,  // ile jeszcze do możliwości kolejnego dashu
         dashDir: 1,       // kierunek aktualnego dashu
-        knockbackTime: 0, // krótka blokada sterowania po uderzeniu przez przeciwnika
-        hitCooldown: 0,   // ogranicza powtarzanie odrzutu przy kontakcie z przeciwnikiem
+        hp: PLAYER_MAX_HP,       // aktualne życie
+        maxHp: PLAYER_MAX_HP,    // życie na starcie poziomu
+        invulnerableTime: 0,     // ile jeszcze gracz jest nietykalny po utracie HP
         wallDir: 0,            // ściana przy graczu: -1 po lewej, 1 po prawej, 0 brak
         lastWallJumpSide: 0,   // strona ostatniego odbicia od ściany (0 po lądowaniu)
         sinceWallJump: Infinity, // ile sekund minęło od ostatniego odbicia od ściany
@@ -140,12 +151,15 @@ export function createGame(initialLevel) {
     let platforms = [];
     let bombs = [];
     let enemies = [];
+    let spikes = [];
     let backgroundLayers = [];
     let levelWidth = VIEW_WIDTH;
     let levelHeight = VIEW_HEIGHT;
     let timeLimit = 60;
     let timeLeft = 60; // pozostały czas w sekundach
     let spawn = { x: 32 * SCALE, y: 160 * SCALE }; // dolny środek gracza na starcie
+    let checkpoint = { ...spawn };  // dolny środek gracza po utracie HP (start albo ostatnia rozbrojona bomba)
+    let hurtFlash = 0;              // ile jeszcze trwa czerwony błysk po obrażeniach
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
@@ -227,24 +241,25 @@ export function createGame(initialLevel) {
             defused: false,
         }));
         enemies = (next.enemies ?? []).map(createEnemy);
+        // Kolec w danych poziomu to prostokąt { x, y, w, h } (patrz spike() w levels.js).
+        spikes = (next.spikes ?? []).map((data) => ({ texture: "spike", color: "#aab4bd", ...data }));
         syncSizes();
         camera.setLevelSize(levelWidth, levelHeight);
         reset();
     }
 
-    // Ustawia gracza na starcie poziomu (też po wypadnięciu poza poziom).
+    // Ustawia gracza w checkpoincie (na starcie poziomu, a po rozbrojeniu bomby przy niej).
     function respawnPlayer() {
         syncSizes();
-        player.x = spawn.x - player.w / 2;
-        player.y = spawn.y - player.h;
+        player.x = checkpoint.x - player.w / 2;
+        player.y = checkpoint.y - player.h;
         player.vx = 0;
         player.vy = 0;
         player.onGround = false;
         player.facing = 1;
         player.dashTime = 0;
         player.dashCooldown = 0;
-        player.knockbackTime = 0;
-        player.hitCooldown = 0;
+        player.invulnerableTime = 0;
         player.wallDir = 0;
         player.lastWallJumpSide = 0;
         player.sinceWallJump = Infinity;
@@ -260,13 +275,17 @@ export function createGame(initialLevel) {
         camera.snapTo(player);
     }
 
-    // Pełny reset aktualnego poziomu: gracz, bomby i timer.
+    // Pełny reset aktualnego poziomu: gracz (z pełnym HP), bomby, przeciwnicy i timer.
     function reset() {
         for (const bomb of bombs) {
             bomb.defused = false;
             bomb.texture = "bomb";
         }
         enemies.forEach(resetEnemy);
+        checkpoint = { ...spawn };
+        player.maxHp = level.hp ?? PLAYER_MAX_HP;
+        player.hp = player.maxHp;
+        hurtFlash = 0;
         respawnPlayer();
         timeLeft = timeLimit;
     }
@@ -382,7 +401,25 @@ export function createGame(initialLevel) {
     function defuse(bomb) {
         bomb.defused = true;
         bomb.texture = "bombDefused";
+        // Rozbrojona bomba to nowy checkpoint: gracz wraca tu na środek, stopami na powierzchni bomby.
+        checkpoint = { x: bomb.x + bomb.w / 2, y: bomb.y + bomb.h };
     }
+
+    // Zabiera graczowi życie. Zwraca false, gdy gracz jest nietykalny (nic się nie dzieje).
+    // Po utracie HP gracz wraca do checkpointu i jest chwilę nietykalny; przy 0 HP zostaje
+    // na miejscu, a main.js pokazuje ekran przegranej (patrz isDead()).
+    function damagePlayer(amount = 1) {
+        if (player.hp <= 0 || player.invulnerableTime > 0) return false;
+        player.hp = Math.max(0, player.hp - amount);
+        hurtFlash = HURT_FLASH_TIME;
+        if (player.hp > 0) {
+            respawnPlayer();
+            player.invulnerableTime = INVULNERABLE_TIME;
+        }
+        return true;
+    }
+
+    const isDead = () => player.hp <= 0;
 
     // Nearest active enemy that accepts this method and is within the given range.
     function nearbyEnemy(method = "interact", maxDistance = INTERACT_RANGE, type = null) {
@@ -440,27 +477,32 @@ export function createGame(initialLevel) {
         }
     }
 
-    // Contact applies knockback only; there is no health or damage system yet.
+    // Kontakt z aktywnym przeciwnikiem zabiera 1 HP, ale tylko gdy gracz jest PRZED nim (po stronie,
+    // w którą patrzy). Od tyłu przeciwnik nie rani. Wyjątek: dash w słabego przeciwnika ma
+    // pierwszeństwo (main.js kajdankuje go przed tym wywołaniem, a tu pomijamy go na wszelki wypadek).
+    // Zwraca przeciwnika, który zranił gracza, albo null.
     function resolveEnemyAttack() {
-        if (player.hitCooldown > 0) return null;
-        const enemy = enemies.find((item) => item.state === "active" && overlaps(player, item));
-        if (!enemy) return null;
-
+        if (player.invulnerableTime > 0 || player.hp <= 0) return null;
         const playerCenter = player.x + player.w / 2;
-        const enemyCenter = enemy.x + enemy.w / 2;
-        const awayDirection = playerCenter === enemyCenter
-            ? -enemy.facing
-            : Math.sign(playerCenter - enemyCenter);
-        const attack = ENEMY_TYPES[enemy.type].attack;
-        player.vx = awayDirection * attack.knockbackX;
-        player.vy = attack.knockbackY;
-        player.onGround = false;
-        player.dashTime = 0;
-        player.wallLockTime = 0;
-        player.canCutJump = false;
-        player.knockbackTime = attack.controlLock;
-        player.hitCooldown = attack.hitCooldown;
-        return enemy;
+        for (const enemy of enemies) {
+            if (enemy.state !== "active" || !overlaps(player, enemy)) continue;
+            const enemyCenter = enemy.x + enemy.w / 2;
+            if ((playerCenter - enemyCenter) * enemy.facing < 0) continue; // gracz za plecami przeciwnika
+            const dashingIntoIt = player.dashTime > 0
+                && (enemyCenter - playerCenter) * player.dashDir > 0
+                && canCuff(enemy, "dash", { fromBehind: false });
+            if (dashingIntoIt) continue; // atak gracza ma pierwszeństwo
+            damagePlayer(ENEMY_TYPES[enemy.type].attack.damage);
+            return enemy;
+        }
+        return null;
+    }
+
+    // Kolce nie są solidne: samo dotknięcie hitboxem zabiera 1 HP.
+    function resolveSpikes() {
+        if (player.invulnerableTime > 0 || player.hp <= 0) return false;
+        if (!spikes.some((spike) => overlaps(player, spike))) return false;
+        return damagePlayer(1);
     }
 
     const defusedCount = () => bombs.filter((bomb) => bomb.defused).length;
@@ -487,8 +529,8 @@ export function createGame(initialLevel) {
         let dashDirection = player.dashDir;
         syncSizes();
         tickTimer(dt);
-        player.hitCooldown = Math.max(0, player.hitCooldown - dt);
-        player.knockbackTime = Math.max(0, player.knockbackTime - dt);
+        player.invulnerableTime = Math.max(0, player.invulnerableTime - dt);
+        hurtFlash = Math.max(0, hurtFlash - dt);
         updateEnemies(dt);
 
         grappleCooldown = Math.max(0, grappleCooldown - dt);
@@ -506,7 +548,7 @@ export function createGame(initialLevel) {
             }
             else detachGrapple();
         } else if (!grappleTarget && grappleCooldown <= 0 && input.grapplePressed()
-            && player.knockbackTime <= 0 && player.dashTime <= 0) {
+            && player.dashTime <= 0) {
             const target = nearbyGrappleTarget();
             if (target) attachGrapple(target);
         }
@@ -519,7 +561,7 @@ export function createGame(initialLevel) {
         if (input.jumpPressed() && !grappleTarget) player.jumpBuffer = JUMP_BUFFER;
 
         // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
-        if (input.dashPressed() && !grappleTarget && player.knockbackTime <= 0 && player.dashTime <= 0 && player.dashCooldown <= 0) {
+        if (input.dashPressed() && !grappleTarget && player.dashTime <= 0 && player.dashCooldown <= 0) {
             // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
             player.dashDir = input.moveX() || player.facing;
             player.facing = player.dashDir;
@@ -553,11 +595,11 @@ export function createGame(initialLevel) {
             player.vy = 0;
         } else {
             // 2) Ruch poziomy (na chwilę zablokowany po odbiciu od ściany)
-            if (player.knockbackTime <= 0 && player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
-            if (player.knockbackTime <= 0 && player.vx !== 0) player.facing = Math.sign(player.vx);
+            if (player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
+            if (player.vx !== 0) player.facing = Math.sign(player.vx);
 
             // 3) Skok z ziemi albo odbicie od ściany
-            if (player.knockbackTime <= 0 && player.jumpBuffer > 0) {
+            if (player.jumpBuffer > 0) {
                 const sameSide = player.wallDir === player.lastWallJumpSide;
                 const wallJumpAllowed = player.wallDir !== 0
                     && (!sameSide || player.sinceWallJump >= SAME_WALL_COOLDOWN);
@@ -648,7 +690,7 @@ export function createGame(initialLevel) {
         }
 
         // 10) Zabezpieczenie: gdyby gracz wypadł poza poziom
-        if (player.y > levelHeight + 100 * SCALE) respawnPlayer();
+        if (player.y > levelHeight + 100 * SCALE) respawnPlayer(); // bez utraty HP
 
         // 11) Kamera goni gracza (pionowo ze strefą martwą)
         camera.follow(player, dt);
@@ -677,6 +719,8 @@ export function createGame(initialLevel) {
             ? (dashOriginX - (dashTarget.x + dashTarget.w / 2)) * dashTarget.facing < 0
                 && dashDirection === dashTarget.facing
             : false;
+        resolveSpikes();
+
         return { dashed: dashedThisFrame, dashDirection, dashTarget, dashFromBehind };
     }
 
@@ -699,6 +743,40 @@ export function createGame(initialLevel) {
             ctx.fillRect(r.w - 5 * SCALE, 5 * SCALE, 2 * SCALE, 2 * SCALE);
         }
         ctx.restore();
+    }
+
+    // Kolce: teksturą (kafelek 1 x 1/4 tila z textures.js), a bez niej rząd szarych trójkątów.
+    function drawSpike(ctx, spike) {
+        if (drawTexture(ctx, spike.texture, spike.x, spike.y, spike.w, spike.h)) return;
+
+        const x = Math.round(spike.x);
+        const y = Math.round(spike.y);
+        const h = Math.round(spike.h);
+        const toothW = h; // ząb jest tak szeroki jak wysoki (4 zęby na tile)
+        ctx.fillStyle = spike.color;
+        for (let tx = 0; tx + toothW <= spike.w; tx += toothW) {
+            for (let row = 0; row < h; row++) {
+                // Trójkąt: im wyżej, tym węższy.
+                const half = Math.floor((row + 1) * toothW / (2 * h) + 0.5);
+                const cx = x + tx + toothW / 2;
+                ctx.fillRect(cx - half, y + row, half * 2, 1);
+            }
+        }
+    }
+
+    // Serce w HUD: teksturą "heart" / "heartEmpty", a bez niej proste serce z pikseli.
+    function drawHeart(ctx, x, y, size, full) {
+        if (drawTexture(ctx, full ? "heart" : "heartEmpty", x, y, size, size)) return;
+
+        // Wzór 7 x 6 "pikseli serca" skalowany do size.
+        const rows = ["0110110", "1111111", "1111111", "0111110", "0011100", "0001000"];
+        const px = size / 7;
+        ctx.fillStyle = full ? "#e5484d" : "#3a2a32";
+        rows.forEach((row, ry) => {
+            for (let rx = 0; rx < 7; rx++) {
+                if (row[rx] === "1") ctx.fillRect(Math.round(x + rx * px), Math.round(y + ry * px), Math.ceil(px), Math.ceil(px));
+            }
+        });
     }
 
     // Bomba: teksturą, a bez niej prosty kształt z pikseli (kula z lontem, po rozbrojeniu zielona).
@@ -835,6 +913,19 @@ export function createGame(initialLevel) {
             ctx.setLineDash([]);
         }
 
+        // Kolce (żółty obrys)
+        ctx.strokeStyle = "rgba(255, 220, 60, 0.95)";
+        for (const spike of spikes) outline(ctx, spike.x, spike.y, spike.w, spike.h);
+
+        // Checkpoint (zielony krzyżyk w miejscu, do którego wróci gracz)
+        ctx.strokeStyle = "rgba(60, 255, 122, 0.9)";
+        ctx.beginPath();
+        ctx.moveTo(checkpoint.x - 4 * SCALE, checkpoint.y);
+        ctx.lineTo(checkpoint.x + 4 * SCALE, checkpoint.y);
+        ctx.moveTo(checkpoint.x, checkpoint.y - 4 * SCALE);
+        ctx.lineTo(checkpoint.x, checkpoint.y + 4 * SCALE);
+        ctx.stroke();
+
         // Active and cuffed enemy hitboxes (red/gray) with their cuffing ranges.
         for (const enemy of enemies) {
             ctx.strokeStyle = enemy.state === "active" ? "rgba(255, 90, 120, 0.95)" : "rgba(180, 190, 200, 0.8)";
@@ -900,6 +991,7 @@ export function createGame(initialLevel) {
             `onGround: ${player.onGround}   facing: ${player.facing}`,
             `dash: ${dash}`,
             `ściana: ${player.wallDir}  ost.: ${player.lastWallJumpSide}  cd: ${wallCooldown.toFixed(2)}  ślizg: ${player.wallSlideTime.toFixed(2)}`,
+            `HP: ${player.hp}/${player.maxHp}   nietykalny: ${player.invulnerableTime.toFixed(2)} s   checkpoint: ${checkpoint.x.toFixed(0)},${checkpoint.y.toFixed(0)}   kolce: ${spikes.length}`,
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `przeciwnicy: ${enemyCounts.active} aktywnych / ${enemyCounts.cuffed} zakutych`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
@@ -909,13 +1001,13 @@ export function createGame(initialLevel) {
 
         const lineHeight = 7 * SCALE;
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
-        ctx.fillRect(4 * SCALE, 16 * SCALE, 200 * SCALE, lines.length * lineHeight + 6 * SCALE);
+        ctx.fillRect(4 * SCALE, 28 * SCALE, 230 * SCALE, lines.length * lineHeight + 6 * SCALE);
 
         ctx.fillStyle = "#d8ffe4";
         ctx.font = `${5 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        lines.forEach((text, i) => ctx.fillText(text, 7 * SCALE, 19 * SCALE + i * lineHeight));
+        lines.forEach((text, i) => ctx.fillText(text, 7 * SCALE, 31 * SCALE + i * lineHeight));
         ctx.textBaseline = "alphabetic";
     }
 
@@ -927,6 +1019,12 @@ export function createGame(initialLevel) {
         ctx.font = `700 ${7 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.85)";
         ctx.fillText(level.name, 6 * SCALE, 11 * SCALE);
+
+        // Życie: rząd serc pod nazwą poziomu (pełne = pozostałe HP).
+        const heartSize = 10 * SCALE;
+        for (let i = 0; i < player.maxHp; i++) {
+            drawHeart(ctx, 6 * SCALE + i * (heartSize + 2 * SCALE), 14 * SCALE, heartSize, i < player.hp);
+        }
 
         // Timer i bomby w prawym górnym rogu
         ctx.fillStyle = "rgba(10, 15, 22, 0.55)";
@@ -981,6 +1079,8 @@ export function createGame(initialLevel) {
             }
         }
 
+        for (const spike of spikes) drawSpike(ctx, spike);
+
         if (grappleTarget) {
             ctx.strokeStyle = "#f2d37b";
             ctx.lineWidth = 2;
@@ -1000,12 +1100,20 @@ export function createGame(initialLevel) {
         for (const g of ghosts) {
             drawPlayer(ctx, g.x, g.y, g.facing, (g.life / GHOST_LIFE) * 0.45, scale);
         }
-        drawPlayer(ctx, player.x, player.y, player.facing, 1, scale);
+        // Po utracie HP gracz miga (jest nietykalny).
+        const blinkHidden = player.invulnerableTime > 0 && Math.floor(player.invulnerableTime * 12) % 2 === 0;
+        drawPlayer(ctx, player.x, player.y, player.facing, blinkHidden ? 0.35 : 1, scale);
 
         if (hud) drawInteractPrompt(ctx);
         if (debug) drawDebugWorld(ctx);
 
         ctx.restore();
+
+        // Krótki czerwony błysk po utracie HP.
+        if (hurtFlash > 0) {
+            ctx.fillStyle = `rgba(229, 72, 77, ${(hurtFlash / HURT_FLASH_TIME) * 0.35})`;
+            ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+        }
 
         if (hud) drawHud(ctx);
         if (debug) drawDebugPanel(ctx, fps);
@@ -1026,10 +1134,13 @@ export function createGame(initialLevel) {
         nearbyEnemy,
         cuffEnemy: cuff,
         resolveEnemyAttack,
+        isDead,
         activeEnemyCounts,
         defuse,
         allDefused,
         get level() { return level; },
         get timeLeft() { return timeLeft; },
+        get hp() { return player.hp; },
+        get checkpoint() { return { ...checkpoint }; },
     };
 }
