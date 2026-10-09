@@ -58,6 +58,13 @@ export const TEXTURES = {
     background3: { src: null, parallax: 0.3 },  // poziom 3
     background4: { src: null, parallax: 0.3 },  // poziom 4 (tło przesuwa się tylko poziomo)
 
+    // Kolce: kafelek 1 x 1/4 tila (32 x 8 px), powtarzany na całej szerokości kolców.
+    spike: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE / 4 }, // np. "assets/spike.png"
+
+    // Życie gracza w interfejsie: pełne i puste serce (rysowane w HUD, np. 10 x 10 px).
+    heart: { src: null },       // np. "assets/heart.png"
+    heartEmpty: { src: null },  // np. "assets/heart_empty.png"
+
     // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
     bomb: { src: null, trim: true },         // np. "assets/bomb.png"
     bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"
