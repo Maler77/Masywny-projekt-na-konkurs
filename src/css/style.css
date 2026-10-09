@@ -205,7 +205,7 @@ kbd {
 .controls-corner__list li { display: flex; justify-content: space-between; gap: 1.25rem; }
 .controls-corner kbd { margin-right: .15rem; padding: 0 .3rem; }
 
-body[data-state="playing"] .controls-corner { opacity: .5; }
+body[data-state="playing"] .controls-corner { opacity: 0; }
 body[data-state="bomb"] .controls-corner,
 body[data-state="won"] .controls-corner,
 body[data-state="lost"] .controls-corner { display: none; }
