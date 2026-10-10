@@ -25,6 +25,9 @@ import { SCALE } from "./config.js";
 //             przeciwnika stożek obraca się razem z nim)
 //    offsetY  przesunięcie początku stożka w dół od górnej krawędzi przeciwnika (px; "wysokość oczu")
 //    alpha    przezroczystość rysowanego stożka, 0 = niewidoczny, 1 = pełny kolor
+//    track    true = podczas pościgu stożek obraca się i celuje w gracza (także w górę i w dół, i za
+//             plecy), więc pościg kończy się dopiero, gdy gracz jest poza długością stożka albo za ścianą.
+//             false = stożek zawsze patrzy poziomo przed siebie (gracz może uciec kątem, np. skokiem).
 //  Ściany zasłaniają widok: stożek jest przycinany przez solidne platformy.
 //
 //  OBSZAR RUCHU (area) przy tworzeniu przeciwnika w levels.js:
@@ -52,7 +55,7 @@ export const ENEMY_TYPES = Object.freeze({
         cuffFromBackMethods: Object.freeze([]),
         armored: false,
         colors: Object.freeze({ body: "#c9823d", head: "#edb55f", visor: "#f2ead1", belt: "#5b382d", vision: "#ffe58a" }),
-        vision: Object.freeze({ angle: 70, length: 100 * SCALE, offsetX: 3 * SCALE, offsetY: 5 * SCALE, alpha: 0.2 }),
+        vision: Object.freeze({ angle: 70, length: 100 * SCALE, offsetX: 3 * SCALE, offsetY: 5 * SCALE, alpha: 0.2, track: true }),
         attack: Object.freeze({ damage: 1 }),
     }),
     strong: Object.freeze({
@@ -65,14 +68,14 @@ export const ENEMY_TYPES = Object.freeze({
         cuffFromBackMethods: Object.freeze(["interact"]),
         armored: true,
         colors: Object.freeze({ body: "#713e59", head: "#c65366", visor: "#f2d9ab", belt: "#343343", vision: "#ffb3c1" }),
-        vision: Object.freeze({ angle: 80, length: 120 * SCALE, offsetX: 4 * SCALE, offsetY: 6 * SCALE, alpha: 0.2 }),
+        vision: Object.freeze({ angle: 80, length: 120 * SCALE, offsetX: 4 * SCALE, offsetY: 6 * SCALE, alpha: 0.2, track: false }),
         attack: Object.freeze({ damage: 1 }),
     }),
 });
 
 // Level coordinates use the same anchor as the player and bombs: x is the center,
 // y is the floor under the enemy's feet.
-// Opcje: id, direction (1 / -1), speed, chaseSpeed, area { x1, y1, x2, y2 }, vision { angle, length, offsetX, offsetY, alpha }.
+// Opcje: id, direction (1 / -1), speed, chaseSpeed, area { x1, y1, x2, y2 }, vision { angle, length, offsetX, offsetY, alpha, track }.
 export function createEnemy(data, index = 0) {
     const definition = ENEMY_TYPES[data.type];
     if (!definition) throw new Error(`Unknown enemy type: ${data.type}`);
@@ -99,6 +102,7 @@ export function createEnemy(data, index = 0) {
         hitWall: false,
         support: null,               // platforma, na której przeciwnik stoi
         exclaim: 0,                  // ile jeszcze widać "!"
+        aim: null,                   // kierunek stożka w radianach podczas pościgu (vision.track), poza nim null
         ai: { mode: "patrol", timer: 0, lastSeenX: null, sees: false },
     };
     enemy.homeX = enemy.x;
@@ -155,6 +159,7 @@ export function resetEnemy(enemy) {
     enemy.direction = enemy.homeDirection;
     enemy.facing = enemy.homeDirection;
     enemy.exclaim = 0;
+    enemy.aim = null;
     enemy.ai = { mode: "patrol", timer: 0, lastSeenX: null, sees: false };
 }
 
@@ -164,6 +169,7 @@ export function calmEnemy(enemy) {
     enemy.ai = { mode: "patrol", timer: 0, lastSeenX: null, sees: false };
     enemy.direction = enemy.facing;
     enemy.exclaim = 0;
+    enemy.aim = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +212,11 @@ export function visionOrigin(enemy) {
     };
 }
 
+// Kierunek środka stożka (radiany): do przodu poziomo albo, w pościgu przeciwnika ze śledzeniem, na gracza.
+function visionBase(enemy) {
+    return enemy.aim ?? (enemy.facing > 0 ? 0 : Math.PI);
+}
+
 // Czy przeciwnik widzi prostokąt `target` (hitbox gracza): któryś z 3 punktów (głowa, środek, nogi)
 // musi być w stożku (kąt i długość) i nie może być zasłonięty przez ścianę.
 export function canEnemySee(enemy, target, platforms) {
@@ -213,6 +224,7 @@ export function canEnemySee(enemy, target, platforms) {
     const { angle, length } = enemy.vision;
     const origin = visionOrigin(enemy);
     const half = (angle / 2) * Math.PI / 180;
+    const base = visionBase(enemy);
     const cx = target.x + target.w / 2;
     for (const fraction of [0.2, 0.5, 0.8]) {
         const dx = cx - origin.x;
@@ -220,7 +232,7 @@ export function canEnemySee(enemy, target, platforms) {
         const distance = Math.hypot(dx, dy);
         if (distance > length) continue;
         if (distance > 0.001) {
-            const cosine = (dx * enemy.facing) / distance;
+            const cosine = (dx * Math.cos(base) + dy * Math.sin(base)) / distance;
             if (Math.acos(Math.max(-1, Math.min(1, cosine))) > half) continue;
             if (rayDistance(platforms, origin.x, origin.y, dx / distance, dy / distance, distance) < distance - 0.5) continue;
         }
@@ -234,7 +246,7 @@ export function visionPolygon(enemy, platforms, steps = 24) {
     const { angle, length } = enemy.vision;
     const origin = visionOrigin(enemy);
     const half = (angle / 2) * Math.PI / 180;
-    const base = enemy.facing > 0 ? 0 : Math.PI;
+    const base = visionBase(enemy);
     const points = [{ x: origin.x, y: origin.y }];
     for (let i = 0; i <= steps; i++) {
         const a = base - half + (2 * half * i) / steps;
@@ -271,6 +283,14 @@ function think(enemy, world, dt) {
     const ai = enemy.ai;
     const ex = enemy.x + enemy.w / 2;
     const px = player.x + player.w / 2;
+    // Śledzenie: w pościgu stożek celuje w środek gracza, więc o utracie gracza decyduje tylko
+    // odległość (długość stożka) i ściany, a nie kąt.
+    if (enemy.vision.track && ai.mode === "chase") {
+        const origin = visionOrigin(enemy);
+        enemy.aim = Math.atan2(player.y + player.h / 2 - origin.y, px - origin.x);
+    } else {
+        enemy.aim = null;
+    }
     const sees = canEnemySee(enemy, player, platforms);
     ai.sees = sees;
 
@@ -358,6 +378,7 @@ function think(enemy, world, dt) {
         } else {
             ai.mode = "search";
             ai.timer = SEARCH_TIME;
+            enemy.aim = null;
         }
         const dx = (ai.lastSeenX ?? px) - ex;
         if (Math.abs(dx) <= 2) return { move: 0, speed: 0, allowDrop: false };
