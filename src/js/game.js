@@ -21,11 +21,19 @@ const DASH_SPEED = 240 * SCALE;      // prędkość w trakcie dashu
 const DASH_TIME = 0.15;      // czas trwania dashu (dystans ok. 2,25 tila)
 const DASH_COOLDOWN = 0.5;   // minimalny odstęp między startami dashu
 const GHOST_LIFE = 0.25;     // jak długo widać "cienie" po dashu
-const GRAPPLE_RANGE = 160 * SCALE;
-const GRAPPLE_PUMP_ACCEL = 420 * SCALE;
-const GRAPPLE_COOLDOWN = 0.5;
-const GRAPPLE_MIN_LENGTH = 24 * SCALE;
-const GRAPPLE_LENGTH_SPEED = 160 * SCALE;
+
+// Hak (Q): lina jest sztywnym ograniczeniem odległości od punktu zaczepienia, a gracz huśta się jak wahadło.
+const GRAPPLE_RANGE = 100 * SCALE;          // zasięg zaczepienia i maksymalna długość liny (200 px = ok. 6 tili)
+const GRAPPLE_MIN_LENGTH = 24 * SCALE;      // najkrótsza lina
+const GRAPPLE_COOLDOWN = 0.5;               // po odpięciu: czas, zanim można zaczepić ten sam punkt (i w ogóle ponownie)
+const GRAPPLE_LENGTH_SPEED = 50 * SCALE;    // zwijanie / rozwijanie liny (px/s); wolno, żeby dało się precyzyjnie ustawić długość
+const GRAPPLE_PUMP_ACCEL = 22 * SCALE;      // rozhuśtywanie (A/D w powietrzu): bardzo słabe, wahadło rozkręca się powoli
+const GRAPPLE_DAMPING = 0.06;               // tłumienie napiętej liny (1/s), żeby huśtawka nie rosła w nieskończoność
+const GRAPPLE_SUBSTEP = 1 / 120;            // krok symulacji liny (s); mniejszy krok = stabilniejsze wahadło
+const GRAPPLE_BACK_TOLERANCE = TILE / 2;    // punkt tak blisko "za plecami" (np. dokładnie nad głową) nadal jest "przed"
+const GRAPPLE_BLOCKED_TIME = 0.12;          // lina przecięta przez ścianę dłużej niż tyle sekund odpina się sama
+const RELEASE_AIR_ACCEL = 300 * SCALE;      // sterowanie w powietrzu po odpięciu liny (px/s²)
+const RELEASE_AIR_DRAG = 0.6;               // jak szybko wygasa pęd z huśtawki bez sterowania (1/s)
 
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
 const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
@@ -142,6 +150,7 @@ export function createGame(initialLevel) {
         wallLockTime: 0,       // ile jeszcze sterowanie poziome jest zablokowane po odbiciu
         jumpBuffer: 0,         // ile jeszcze liczy się wcześniej wciśnięty skok
         canCutJump: false,     // czy puszczenie klawisza skróci skok (tylko skok z ziemi)
+        airCarry: false,       // po odpięciu liny: zachowuje pęd poziomy w powietrzu (do lądowania)
         texture: "player",     // nazwa z textures.js
         color: "#79d7c4",      // kolor zastępczy, gdy brak tekstury
     };
@@ -166,6 +175,7 @@ export function createGame(initialLevel) {
     let grappleTarget = null;
     let grappleLength = 0;
     let grappleCooldown = 0;
+    let grappleBlockedTime = 0; // ile sekund lina jest przecięta przez ścianę
     const grappleTargetLocks = new Map();
     let lastDt = 0; // do wyświetlania w trybie debug
 
@@ -267,10 +277,12 @@ export function createGame(initialLevel) {
         player.wallLockTime = 0;
         player.jumpBuffer = 0;
         player.canCutJump = false;
+        player.airCarry = false;
         ghosts.length = 0;
         grappleTarget = null;
         grappleLength = 0;
         grappleCooldown = 0;
+        grappleBlockedTime = 0;
         grappleTargetLocks.clear();
         camera.snapTo(player);
     }
@@ -312,50 +324,78 @@ export function createGame(initialLevel) {
         return best;
     }
 
+    // Odpina linę. Odpięty punkt jest blokowany na GRAPPLE_COOLDOWN, a gracz w powietrzu zachowuje
+    // pęd z huśtawki (airCarry), zamiast od razu hamować do prędkości biegu.
     function detachGrapple() {
         if (!grappleTarget) return;
         grappleTargetLocks.set(grappleTarget, GRAPPLE_COOLDOWN);
         grappleTarget = null;
         grappleLength = 0;
+        grappleBlockedTime = 0;
         grappleCooldown = GRAPPLE_COOLDOWN;
-    }
-
-    function lockCurrentTargetForTransfer() {
-        if (grappleTarget) grappleTargetLocks.set(grappleTarget, GRAPPLE_COOLDOWN);
+        player.airCarry = !player.onGround;
     }
 
     function attachGrapple(target) {
         grappleTarget = target;
+        grappleBlockedTime = 0;
         const anchorX = target.x + target.w / 2;
         const anchorY = target.y + target.h / 2;
-        grappleLength = Math.hypot(
-            player.x + player.w / 2 - anchorX,
-            player.y + player.h / 2 - anchorY,
-        );
+        const distance = Math.hypot(player.x + player.w / 2 - anchorX, player.y + player.h / 2 - anchorY);
+        grappleLength = Math.max(GRAPPLE_MIN_LENGTH, Math.min(GRAPPLE_RANGE, distance));
         player.canCutJump = false;
+        player.airCarry = false;
+        player.dashTime = 0;
     }
 
-    function hasClearGrappleLine(target, fromX, fromY) {
+    // Czy odcinek (gracz -> punkt zaczepienia) nie przechodzi przez solidną platformę.
+    // Platformy "oneWay" (przechodzi się przez nie od dołu) nie blokują liny. `shrink` zmniejsza
+    // przeszkody o tyle pikseli z każdej strony, żeby ocierający się o ścianę gracz nie gubił liny.
+    function hasClearGrappleLine(target, fromX, fromY, shrink = 0) {
         const toX = target.x + target.w / 2;
         const toY = target.y + target.h / 2;
         return !platforms.some((platform) => platform !== target
             && platform.solid !== false
-            && segmentIntersectsBox(fromX, fromY, toX, toY, platform));
+            && !platform.oneWay
+            && segmentIntersectsBox(fromX, fromY, toX, toY, {
+                x: platform.x + shrink,
+                y: platform.y + shrink,
+                w: Math.max(0, platform.w - 2 * shrink),
+                h: Math.max(0, platform.h - 2 * shrink),
+            }));
     }
 
-    // Nearest grappleable point in front of the player, within range and unobstructed.
-    function nearbyGrappleTarget(maxDistance = GRAPPLE_RANGE, excludedTarget = null) {
+    // Stan punktu zaczepienia względem gracza (do wyboru celu i do debugu):
+    // "ok" (można zaczepić), "behind" (za plecami), "blocked" (ściana na drodze liny),
+    // "locked" (chwilowo zablokowany po odpięciu), "far" (poza zasięgiem).
+    function classifyGrappleTarget(target, maxDistance = GRAPPLE_RANGE) {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        const targetX = target.x + target.w / 2;
+        const targetY = target.y + target.h / 2;
+        if (Math.hypot(cx - targetX, cy - targetY) > maxDistance) return "far";
+        if (grappleTargetLocks.has(target)) return "locked";
+        if (!hasClearGrappleLine(target, cx, cy)) return "blocked";
+        if ((targetX - cx) * player.facing < -GRAPPLE_BACK_TOLERANCE) return "behind";
+        return "ok";
+    }
+
+    // Najbliższy punkt zaczepienia przed graczem, w zasięgu i bez ściany na drodze.
+    // Opcje: anyDirection = bierze też punkty za plecami; ignoreLocks = ignoruje blokadę po odpięciu
+    // (przy przełączaniu między punktami blokada nie ma sensu, bo lina nie była odpinana).
+    function nearbyGrappleTarget(maxDistance = GRAPPLE_RANGE, excludedTarget = null, { anyDirection = false, ignoreLocks = false } = {}) {
         const cx = player.x + player.w / 2;
         const cy = player.y + player.h / 2;
         let best = null;
         let bestDistance = maxDistance;
         for (const target of platforms) {
-            if (target.grappleable !== true || target === excludedTarget || grappleTargetLocks.has(target)) continue;
+            if (target.grappleable !== true || target === excludedTarget) continue;
+            if (!ignoreLocks && grappleTargetLocks.has(target)) continue;
             const targetX = target.x + target.w / 2;
             const targetY = target.y + target.h / 2;
-            if ((targetX - cx) * player.facing <= 0) continue;
+            if (!anyDirection && (targetX - cx) * player.facing < -GRAPPLE_BACK_TOLERANCE) continue;
             const distance = Math.hypot(cx - targetX, cy - targetY);
-            if (distance < bestDistance && hasClearGrappleLine(target, cx, cy)) {
+            if (distance <= bestDistance && hasClearGrappleLine(target, cx, cy)) {
                 best = target;
                 bestDistance = distance;
             }
@@ -363,34 +403,42 @@ export function createGame(initialLevel) {
         return best;
     }
 
+    // Cel, na który przełączy Q podczas huśtania: najpierw przed graczem, a gdy go nie ma,
+    // dowolny inny w zasięgu (wcześniej Q po obróceniu się plecami do drugiego punktu odpinało linę).
+    function nextGrappleTarget() {
+        const options = { ignoreLocks: true };
+        return nearbyGrappleTarget(GRAPPLE_RANGE, grappleTarget, options)
+            ?? nearbyGrappleTarget(GRAPPLE_RANGE, grappleTarget, { ...options, anyDirection: true });
+    }
+
+    // Lina to ograniczenie: gdy gracz jest dalej niż długość liny, wracamy na okrąg. Jeśli ściana
+    // blokuje korektę, próbujemy przesunąć tylko w poziomie albo tylko w pionie (ślizg po ścianie),
+    // zamiast zostawiać linę rozciągniętą. Składową prędkości "od kotwicy" usuwamy, styczną zostawiamy.
     function constrainGrappleRope() {
         if (!grappleTarget || grappleLength <= 0) return;
         const anchorX = grappleTarget.x + grappleTarget.w / 2;
         const anchorY = grappleTarget.y + grappleTarget.h / 2;
-        const centerX = player.x + player.w / 2;
-        const centerY = player.y + player.h / 2;
-        const dx = centerX - anchorX;
-        const dy = centerY - anchorY;
+        const dx = player.x + player.w / 2 - anchorX;
+        const dy = player.y + player.h / 2 - anchorY;
         const distance = Math.hypot(dx, dy);
-        if (distance <= grappleLength) return; // Rope is slack until it becomes taut.
+        if (distance <= grappleLength || distance === 0) return; // lina luźna
 
         const nx = dx / distance;
         const ny = dy / distance;
-        const nextCenterX = anchorX + nx * grappleLength;
-        const nextCenterY = anchorY + ny * grappleLength;
-        const nextPlayer = {
-            x: nextCenterX - player.w / 2,
-            y: nextCenterY - player.h / 2,
-            w: player.w,
-            h: player.h,
-        };
-        const blocked = platforms.some((platform) => platform.solid !== false && overlaps(nextPlayer, platform));
-        if (!blocked) {
-            player.x = nextPlayer.x;
-            player.y = nextPlayer.y;
+        const moveX = nx * grappleLength - dx;
+        const moveY = ny * grappleLength - dy;
+        const fits = (ox, oy) => !platforms.some((platform) => platform.solid !== false && !platform.oneWay
+            && overlaps({ x: player.x + ox, y: player.y + oy, w: player.w, h: player.h }, platform));
+        if (fits(moveX, moveY)) {
+            player.x += moveX;
+            player.y += moveY;
+        } else if (fits(moveX, 0)) {
+            player.x += moveX;
+        } else if (fits(0, moveY)) {
+            player.y += moveY;
         }
+        player.x = Math.max(0, Math.min(levelWidth - player.w, player.x));
 
-        // Remove only velocity that would stretch the rope farther; keep tangential swing momentum.
         const outwardSpeed = player.vx * nx + player.vy * ny;
         if (outwardSpeed > 0) {
             player.vx -= outwardSpeed * nx;
@@ -521,135 +569,29 @@ export function createGame(initialLevel) {
         return false;
     }
 
-    // Aktualizacja logiki. dt = czas od poprzedniej klatki w sekundach.
-    function update(dt, input) {
-        lastDt = dt;
-        const dashOriginX = player.x + player.w / 2;
-        let dashedThisFrame = false;
-        let dashDirection = player.dashDir;
-        syncSizes();
-        tickTimer(dt);
-        player.invulnerableTime = Math.max(0, player.invulnerableTime - dt);
-        hurtFlash = Math.max(0, hurtFlash - dt);
-        updateEnemies(dt);
-
-        grappleCooldown = Math.max(0, grappleCooldown - dt);
-        for (const [target, remaining] of grappleTargetLocks) {
-            const nextRemaining = remaining - dt;
-            if (nextRemaining <= 0) grappleTargetLocks.delete(target);
-            else grappleTargetLocks.set(target, nextRemaining);
-        }
-        if (grappleTarget && input.grappleReleasePressed()) detachGrapple();
-        if (grappleTarget && input.grapplePressed()) {
-            const nextTarget = nearbyGrappleTarget(GRAPPLE_RANGE, grappleTarget);
-            if (nextTarget) {
-                lockCurrentTargetForTransfer();
-                attachGrapple(nextTarget); // Switching anchors has no release cooldown.
-            }
-            else detachGrapple();
-        } else if (!grappleTarget && grappleCooldown <= 0 && input.grapplePressed()
-            && player.dashTime <= 0) {
-            const target = nearbyGrappleTarget();
-            if (target) attachGrapple(target);
-        }
-
-        // Liczniki czasu
-        player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-        player.wallLockTime = Math.max(0, player.wallLockTime - dt);
-        player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
-        player.sinceWallJump += dt;
-        if (input.jumpPressed() && !grappleTarget) player.jumpBuffer = JUMP_BUFFER;
-
-        // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
-        if (input.dashPressed() && !grappleTarget && player.dashTime <= 0 && player.dashCooldown <= 0) {
-            // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
-            player.dashDir = input.moveX() || player.facing;
-            player.facing = player.dashDir;
-            player.dashTime = DASH_TIME;
-            player.dashCooldown = DASH_COOLDOWN;
-            player.wallLockTime = 0;
-        }
-
-        if (grappleTarget) {
-            const lengthChange = input.grappleLengthChange();
-            grappleLength = Math.max(
-                GRAPPLE_MIN_LENGTH,
-                Math.min(GRAPPLE_RANGE, grappleLength + lengthChange * GRAPPLE_LENGTH_SPEED * dt),
-            );
-            const pump = input.moveX();
-            player.vx += pump * GRAPPLE_PUMP_ACCEL * dt;
-            player.vy = Math.min(player.vy + GRAVITY * dt, MAX_FALL_SPEED);
-            if (pump !== 0) player.facing = Math.sign(pump);
-            player.dashTime = 0;
-            player.canCutJump = false;
-        }
-
-        if (grappleTarget) {
-            // Swing movement uses both velocity axes; collision resolution below remains shared.
-        } else if (player.dashTime > 0) {
-            // W trakcie dashu: stała prędkość w poziomie, bez grawitacji i bez skoku.
-            dashedThisFrame = true;
-            dashDirection = player.dashDir;
-            player.dashTime -= dt;
-            player.vx = player.dashDir * DASH_SPEED;
-            player.vy = 0;
-        } else {
-            // 2) Ruch poziomy (na chwilę zablokowany po odbiciu od ściany)
-            if (player.wallLockTime <= 0) player.vx = input.moveX() * MOVE_SPEED;
-            if (player.vx !== 0) player.facing = Math.sign(player.vx);
-
-            // 3) Skok z ziemi albo odbicie od ściany
-            if (player.jumpBuffer > 0) {
-                const sameSide = player.wallDir === player.lastWallJumpSide;
-                const wallJumpAllowed = player.wallDir !== 0
-                    && (!sameSide || player.sinceWallJump >= SAME_WALL_COOLDOWN);
-
-                if (player.onGround) {
-                    player.vy = -JUMP_SPEED;
-                    player.canCutJump = true;
-                    player.jumpBuffer = 0;
-                } else if (wallJumpAllowed) {
-                    player.vy = -WALL_JUMP_SPEED;
-                    player.vx = -player.wallDir * WALL_KICK_SPEED; // odbicie od ściany
-                    player.facing = -player.wallDir;
-                    player.wallLockTime = WALL_LOCK_TIME;
-                    player.lastWallJumpSide = player.wallDir;
-                    player.sinceWallJump = 0;
-                    player.wallSlideTime = 0;
-                    player.canCutJump = false;
-                    player.jumpBuffer = 0;
-                }
-            }
-
-            // 4) Grawitacja. Gdy puścisz skok z ziemi w trakcie wznoszenia, grawitacja jest
-            //    silniejsza, więc skok jest niższy (krótkie vs długie naciśnięcie).
-            const cutJump = player.canCutJump && player.vy < 0 && !input.jumpHeld();
-            player.vy = Math.min(player.vy + GRAVITY * (cutJump ? 2.5 : 1) * dt, MAX_FALL_SPEED);
-
-            // 5) Zsuwanie po ścianie: tylko na początku kontaktu (WALL_SLIDE_DURATION) i tylko
-            //    gdy trzymasz kierunek w stronę ściany. Potem spadasz coraz szybciej.
-            if (!player.onGround && player.wallDir !== 0) {
-                player.wallSlideTime += dt;
-                if (input.moveX() === player.wallDir && player.wallSlideTime < WALL_SLIDE_DURATION) {
-                    player.vy = Math.min(player.vy, WALL_SLIDE_SPEED);
-                }
-            } else {
-                player.wallSlideTime = 0;
-            }
-        }
-
-        // 6) Ruch w poziomie, potem kolizje w poziomie
-        player.x += player.vx * dt;
+    // Kroki 6-7 ruchu: przesunięcie w poziomie i kolizje, potem w pionie i kolizje, na końcu lina.
+    // Uderzenie w ścianę zeruje prędkość poziomą (wcześniej rosła dalej, np. podczas huśtania
+    // w stronę ściany, i po odejściu od niej gracz wystrzeliwał).
+    function moveAndCollide(dt) {
+        const vx = player.vx;
+        let hitSide = false;
+        player.x += vx * dt;
         for (const p of platforms) {
             if (p.solid === false || p.oneWay) continue;
             if (!overlaps(player, p)) continue;
-            if (player.vx > 0) player.x = p.x - player.w;
-            else if (player.vx < 0) player.x = p.x + p.w;
+            if (vx > 0) player.x = p.x - player.w;
+            else if (vx < 0) player.x = p.x + p.w;
             player.dashTime = 0; // uderzenie w ścianę kończy dash
+            hitSide = true;
         }
-        player.x = Math.max(0, Math.min(levelWidth - player.w, player.x));
+        const clampedX = Math.max(0, Math.min(levelWidth - player.w, player.x));
+        if (clampedX !== player.x) hitSide = true;
+        player.x = clampedX;
+        if (hitSide && player.wallLockTime <= 0) {
+            player.vx = 0;
+            player.airCarry = false;
+        }
 
-        // 7) Ruch w pionie, potem kolizje w pionie
         const previousBottom = player.y + player.h;
         player.y += player.vy * dt;
         player.onGround = false;
@@ -673,6 +615,171 @@ export function createGame(initialLevel) {
             player.vy = 0;
         }
         constrainGrappleRope();
+    }
+
+    // Jeden krok huśtawki (h sekund): długość liny, sterowanie, grawitacja, tłumienie, ruch.
+    function swingStep(h, input) {
+        grappleLength = Math.max(
+            GRAPPLE_MIN_LENGTH,
+            Math.min(GRAPPLE_RANGE, grappleLength + input.grappleLengthChange() * GRAPPLE_LENGTH_SPEED * h),
+        );
+        const move = input.moveX();
+        if (move !== 0) player.facing = move;
+        if (player.onGround) {
+            player.vx = move * MOVE_SPEED; // na ziemi chodzisz normalnie (bez ślizgania się)
+        } else {
+            player.vx += move * GRAPPLE_PUMP_ACCEL * h; // w powietrzu: bardzo słabe rozhuśtywanie
+        }
+        player.vy = Math.min(player.vy + GRAVITY * h, MAX_FALL_SPEED);
+
+        const anchorX = grappleTarget.x + grappleTarget.w / 2;
+        const anchorY = grappleTarget.y + grappleTarget.h / 2;
+        const distance = Math.hypot(player.x + player.w / 2 - anchorX, player.y + player.h / 2 - anchorY);
+        if (!player.onGround && distance >= grappleLength - 0.5) {
+            const damping = Math.exp(-GRAPPLE_DAMPING * h); // lina napięta: lekkie tłumienie
+            player.vx *= damping;
+            player.vy *= damping;
+        }
+        player.dashTime = 0;
+        player.canCutJump = false;
+        player.wallSlideTime = 0;
+
+        moveAndCollide(h);
+
+        // Ściana przecinająca linę na dłużej odcina ją (nie huśtamy się "przez" ściany).
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        grappleBlockedTime = hasClearGrappleLine(grappleTarget, cx, cy, 1.5) ? 0 : grappleBlockedTime + h;
+        if (grappleBlockedTime >= GRAPPLE_BLOCKED_TIME) detachGrapple();
+    }
+
+    // Aktualizacja logiki. dt = czas od poprzedniej klatki w sekundach.
+    function update(dt, input) {
+        lastDt = dt;
+        const dashOriginX = player.x + player.w / 2;
+        let dashedThisFrame = false;
+        let dashDirection = player.dashDir;
+        syncSizes();
+        tickTimer(dt);
+        player.invulnerableTime = Math.max(0, player.invulnerableTime - dt);
+        hurtFlash = Math.max(0, hurtFlash - dt);
+        updateEnemies(dt);
+
+        grappleCooldown = Math.max(0, grappleCooldown - dt);
+        for (const [target, remaining] of grappleTargetLocks) {
+            const nextRemaining = remaining - dt;
+            if (nextRemaining <= 0) grappleTargetLocks.delete(target);
+            else grappleTargetLocks.set(target, nextRemaining);
+        }
+        // Q / Spacja przy linie. Spacja odpina (i nie liczy się jako skok), Q przełącza na inny punkt
+        // albo odpina, gdy w zasięgu nie ma innego. Bez liny Q zaczepia najbliższy punkt przed graczem.
+        let releasedThisFrame = false;
+        if (grappleTarget && input.grappleReleasePressed()) {
+            detachGrapple();
+            releasedThisFrame = true;
+        } else if (grappleTarget && input.grapplePressed()) {
+            const nextTarget = nextGrappleTarget();
+            if (nextTarget) attachGrapple(nextTarget); // przełączenie nie ma cooldownu ani blokady
+            else detachGrapple();
+        } else if (!grappleTarget && grappleCooldown <= 0 && input.grapplePressed() && player.dashTime <= 0) {
+            const target = nearbyGrappleTarget();
+            if (target) attachGrapple(target);
+        }
+
+        // Liczniki czasu
+        player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+        player.wallLockTime = Math.max(0, player.wallLockTime - dt);
+        player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
+        player.sinceWallJump += dt;
+        if (input.jumpPressed() && !grappleTarget && !releasedThisFrame) player.jumpBuffer = JUMP_BUFFER;
+
+        // 1) Dash: start, jeśli wciśnięto Shift i minął cooldown
+        if (input.dashPressed() && !grappleTarget && player.dashTime <= 0 && player.dashCooldown <= 0) {
+            // Kierunek z klawiszy, a jeśli żaden nie jest wciśnięty, to w stronę patrzenia.
+            player.dashDir = input.moveX() || player.facing;
+            player.facing = player.dashDir;
+            player.dashTime = DASH_TIME;
+            player.dashCooldown = DASH_COOLDOWN;
+            player.wallLockTime = 0;
+            player.airCarry = false;
+        }
+
+        const swinging = Boolean(grappleTarget);
+        if (swinging) {
+            // Huśtawka liczona drobnymi krokami, bo lina to sztywne ograniczenie i duży krok psuje wahadło.
+            const steps = Math.max(1, Math.ceil(dt / GRAPPLE_SUBSTEP));
+            for (let i = 0; i < steps && grappleTarget; i++) swingStep(dt / steps, input);
+        } else if (player.dashTime > 0) {
+            // W trakcie dashu: stała prędkość w poziomie, bez grawitacji i bez skoku.
+            dashedThisFrame = true;
+            dashDirection = player.dashDir;
+            player.dashTime -= dt;
+            player.vx = player.dashDir * DASH_SPEED;
+            player.vy = 0;
+        } else {
+            // 2) Ruch poziomy (na chwilę zablokowany po odbiciu od ściany)
+            if (player.onGround) player.airCarry = false;
+            if (player.wallLockTime <= 0) {
+                const move = input.moveX();
+                if (player.airCarry) {
+                    // Po odpięciu liny pęd z huśtawki nie znika od razu: gracz może go zwiększyć do
+                    // prędkości biegu, ale szybszy ruch tylko powoli wygasa (RELEASE_AIR_DRAG).
+                    if (move !== 0 && player.vx * move <= MOVE_SPEED) {
+                        player.vx += move * RELEASE_AIR_ACCEL * dt;
+                        if (player.vx * move > MOVE_SPEED) player.vx = move * MOVE_SPEED;
+                    } else {
+                        player.vx *= Math.exp(-RELEASE_AIR_DRAG * dt);
+                    }
+                    if (Math.abs(player.vx) <= MOVE_SPEED * 0.5) player.airCarry = false;
+                } else {
+                    player.vx = move * MOVE_SPEED;
+                }
+            }
+            if (player.vx !== 0) player.facing = Math.sign(player.vx);
+
+            // 3) Skok z ziemi albo odbicie od ściany
+            if (player.jumpBuffer > 0) {
+                const sameSide = player.wallDir === player.lastWallJumpSide;
+                const wallJumpAllowed = player.wallDir !== 0
+                    && (!sameSide || player.sinceWallJump >= SAME_WALL_COOLDOWN);
+
+                if (player.onGround) {
+                    player.vy = -JUMP_SPEED;
+                    player.canCutJump = true;
+                    player.jumpBuffer = 0;
+                } else if (wallJumpAllowed) {
+                    player.vy = -WALL_JUMP_SPEED;
+                    player.vx = -player.wallDir * WALL_KICK_SPEED; // odbicie od ściany
+                    player.facing = -player.wallDir;
+                    player.wallLockTime = WALL_LOCK_TIME;
+                    player.lastWallJumpSide = player.wallDir;
+                    player.sinceWallJump = 0;
+                    player.wallSlideTime = 0;
+                    player.canCutJump = false;
+                    player.airCarry = false;
+                    player.jumpBuffer = 0;
+                }
+            }
+
+            // 4) Grawitacja. Gdy puścisz skok z ziemi w trakcie wznoszenia, grawitacja jest
+            //    silniejsza, więc skok jest niższy (krótkie vs długie naciśnięcie).
+            const cutJump = player.canCutJump && player.vy < 0 && !input.jumpHeld();
+            player.vy = Math.min(player.vy + GRAVITY * (cutJump ? 2.5 : 1) * dt, MAX_FALL_SPEED);
+
+            // 5) Zsuwanie po ścianie: tylko na początku kontaktu (WALL_SLIDE_DURATION) i tylko
+            //    gdy trzymasz kierunek w stronę ściany. Potem spadasz coraz szybciej.
+            if (!player.onGround && player.wallDir !== 0) {
+                player.wallSlideTime += dt;
+                if (input.moveX() === player.wallDir && player.wallSlideTime < WALL_SLIDE_DURATION) {
+                    player.vy = Math.min(player.vy, WALL_SLIDE_SPEED);
+                }
+            } else {
+                player.wallSlideTime = 0;
+            }
+        }
+
+        // Ruch i kolizje (6-7). Przy linie robi to swingStep() w drobnych krokach.
+        if (!swinging) moveAndCollide(dt);
 
         // 8) Kontakt ze ścianą (do odbicia w następnej klatce); lądowanie odnawia odbicia
         if (player.onGround) player.lastWallJumpSide = 0;
@@ -851,7 +958,7 @@ export function createGame(initialLevel) {
     function drawInteractPrompt(ctx) {
         const interactEnemy = nearbyEnemy("interact", INTERACT_RANGE);
         const bomb = nearbyBomb();
-        const grapple = nearbyGrappleTarget();
+        const grapple = grappleTarget ? nextGrappleTarget() : nearbyGrappleTarget();
         const strongEnemy = nearbyEnemy(null, INTERACT_RANGE, "strong");
         let target;
         let text;
@@ -867,7 +974,7 @@ export function createGame(initialLevel) {
             color = "#ffe08a";
         } else if (grapple) {
             target = grapple;
-            text = "Q: uzyj haka";
+            text = grappleTarget ? "Q: zmień cel" : "Q: użyj haka";
             color = "#f2d37b";
         } else if (strongEnemy) {
             target = strongEnemy;
@@ -887,6 +994,71 @@ export function createGame(initialLevel) {
         ctx.fillRect(x - Math.floor(width / 2), y - 8 * SCALE, width, 11 * SCALE);
         ctx.fillStyle = color;
         ctx.fillText(text, x, y);
+    }
+
+    // Debug haka (w układzie poziomu): zasięg, stan każdego punktu zaczepienia i sama lina.
+    // Kolory punktów: zielony = można zaczepić, niebieski = za plecami (Q go pominie, chyba że to jedyny),
+    // pomarańczowy = ściana na drodze liny, czerwony = zablokowany po odpięciu, szary = poza zasięgiem.
+    const GRAPPLE_DEBUG_COLORS = {
+        ok: "rgba(120, 255, 160, 0.95)",
+        behind: "rgba(120, 190, 255, 0.9)",
+        blocked: "rgba(255, 160, 60, 0.95)",
+        locked: "rgba(255, 80, 80, 0.95)",
+        far: "rgba(160, 170, 180, 0.6)",
+    };
+
+    function drawDebugGrapple(ctx) {
+        const targets = platforms.filter((platform) => platform.grappleable === true);
+        if (targets.length === 0 && !grappleTarget) return;
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+
+        // Zasięg zaczepienia: półprzezroczyste koło z wyraźnym obrysem i podpisem.
+        ctx.fillStyle = "rgba(242, 211, 123, 0.06)";
+        ctx.beginPath();
+        ctx.arc(cx, cy, GRAPPLE_RANGE, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(242, 211, 123, 0.9)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(242, 211, 123, 0.95)";
+        ctx.font = `${5 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText(`zasięg haka ${GRAPPLE_RANGE.toFixed(0)} px`, cx, cy - GRAPPLE_RANGE - 3 * SCALE);
+
+        for (const target of targets) {
+            const kind = target === grappleTarget ? "ok" : classifyGrappleTarget(target);
+            ctx.strokeStyle = GRAPPLE_DEBUG_COLORS[kind];
+            outline(ctx, target.x - 1, target.y - 1, target.w + 2, target.h + 2);
+            if (kind !== "far" && target !== grappleTarget) {
+                ctx.globalAlpha = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(target.x + target.w / 2, target.y + target.h / 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        if (grappleTarget) {
+            const anchorX = grappleTarget.x + grappleTarget.w / 2;
+            const anchorY = grappleTarget.y + grappleTarget.h / 2;
+            const taut = Math.hypot(cx - anchorX, cy - anchorY) >= grappleLength - 0.5;
+            // Okrąg o promieniu długości liny: po nim porusza się gracz, gdy lina jest napięta.
+            ctx.strokeStyle = "rgba(242, 211, 123, 0.5)";
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.arc(anchorX, anchorY, grappleLength, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.strokeStyle = taut ? "#ffd23c" : "#4db8ff"; // żółta = napięta, niebieska = luźna
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(anchorX, anchorY);
+            ctx.stroke();
+        }
     }
 
     // Debug w układzie poziomu: hitboxy i wektory.
@@ -925,6 +1097,8 @@ export function createGame(initialLevel) {
         ctx.moveTo(checkpoint.x, checkpoint.y - 4 * SCALE);
         ctx.lineTo(checkpoint.x, checkpoint.y + 4 * SCALE);
         ctx.stroke();
+
+        drawDebugGrapple(ctx);
 
         // Active and cuffed enemy hitboxes (red/gray) with their cuffing ranges.
         for (const enemy of enemies) {
@@ -970,6 +1144,35 @@ export function createGame(initialLevel) {
         }
     }
 
+    // Wiersze panelu debug o haku.
+    function grappleDebugLines() {
+        const counts = { ok: 0, behind: 0, blocked: 0, locked: 0, far: 0 };
+        for (const platform of platforms) {
+            if (platform.grappleable === true) counts[classifyGrappleTarget(platform)]++;
+        }
+        const state = grappleTarget
+            ? "zaczepiony"
+            : grappleCooldown > 0 ? `cooldown ${grappleCooldown.toFixed(2)} s` : "gotowy";
+        const lines = [
+            `hak: ${state}   zasięg: ${GRAPPLE_RANGE.toFixed(0)} px (${(GRAPPLE_RANGE / TILE).toFixed(1)} tila)   pęd po odpięciu: ${player.airCarry ? "tak" : "nie"}`,
+            `cele: ok ${counts.ok}, za plecami ${counts.behind}, ściana ${counts.blocked}, blokada ${counts.locked}, daleko ${counts.far}`,
+        ];
+        if (grappleTarget) {
+            const dx = player.x + player.w / 2 - (grappleTarget.x + grappleTarget.w / 2);
+            const dy = player.y + player.h / 2 - (grappleTarget.y + grappleTarget.h / 2);
+            const distance = Math.hypot(dx, dy) || 1e-9;
+            const radial = (player.vx * dx + player.vy * dy) / distance;
+            const tangential = (-player.vx * dy + player.vy * dx) / distance;
+            const angle = Math.atan2(dx, dy) * 180 / Math.PI; // 0 = lina pionowo w dół
+            const taut = distance >= grappleLength - 0.5 ? "napięta" : "luźna";
+            lines.push(
+                `lina: dł=${grappleLength.toFixed(0)}/${GRAPPLE_RANGE.toFixed(0)}  dystans=${distance.toFixed(0)}  ${taut}  kąt=${angle.toFixed(0)}°`,
+                `v_prom=${radial.toFixed(0)}  v_stycz=${tangential.toFixed(0)}  lina za ścianą: ${grappleBlockedTime.toFixed(2)} s`,
+            );
+        }
+        return lines;
+    }
+
     // Debug w układzie ekranu: panel z liczbami.
     function drawDebugPanel(ctx, fps) {
         const dash = player.dashTime > 0
@@ -992,6 +1195,7 @@ export function createGame(initialLevel) {
             `dash: ${dash}`,
             `ściana: ${player.wallDir}  ost.: ${player.lastWallJumpSide}  cd: ${wallCooldown.toFixed(2)}  ślizg: ${player.wallSlideTime.toFixed(2)}`,
             `HP: ${player.hp}/${player.maxHp}   nietykalny: ${player.invulnerableTime.toFixed(2)} s   checkpoint: ${checkpoint.x.toFixed(0)},${checkpoint.y.toFixed(0)}   kolce: ${spikes.length}`,
+            ...grappleDebugLines(),
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `przeciwnicy: ${enemyCounts.active} aktywnych / ${enemyCounts.cuffed} zakutych`,
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
@@ -1001,7 +1205,7 @@ export function createGame(initialLevel) {
 
         const lineHeight = 7 * SCALE;
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
-        ctx.fillRect(4 * SCALE, 28 * SCALE, 230 * SCALE, lines.length * lineHeight + 6 * SCALE);
+        ctx.fillRect(4 * SCALE, 28 * SCALE, 260 * SCALE, lines.length * lineHeight + 6 * SCALE);
 
         ctx.fillStyle = "#d8ffe4";
         ctx.font = `${5 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
@@ -1129,6 +1333,16 @@ export function createGame(initialLevel) {
         reset,
         loadLevel,
         getGrappleTargets: () => platforms.filter((platform) => platform.grappleable === true),
+        // Stan haka (tylko do odczytu; używa go m.in. debug i testy).
+        get grapple() {
+            return {
+                attached: Boolean(grappleTarget),
+                target: grappleTarget,
+                length: grappleLength,
+                cooldown: grappleCooldown,
+                blockedTime: grappleBlockedTime,
+            };
+        },
         tickTimer,
         nearbyBomb,
         nearbyEnemy,
