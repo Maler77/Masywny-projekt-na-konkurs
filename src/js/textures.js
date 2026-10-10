@@ -65,6 +65,9 @@ export const TEXTURES = {
     heart: { src: null },       // np. "assets/heart.png"
     heartEmpty: { src: null },  // np. "assets/heart_empty.png"
 
+    // Wykrzyknik nad przeciwnikiem, który zauważył gracza (rysowany w 6 x 14 px; bez pliku: czerwony wykrzyknik).
+    exclamation: { src: null },  // np. "assets/exclamation.png"
+
     // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
     bomb: { src: null, trim: true },         // np. "assets/bomb.png"
     bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"

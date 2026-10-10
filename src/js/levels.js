@@ -74,8 +74,10 @@ export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHei
 // siebie (każdy 1 tile szerokości). Dotknięcie kolca zabiera graczowi 1 HP i cofa go do checkpointu.
 export const spike = (x, y, count = 1) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4 });
 
-// Enemy anchor: x is center, y is the surface under their feet. Optional patrol
-// bounds are center-X coordinates, with an optional speed in pixels per second.
+// Przeciwnik: x = środek, y = powierzchnia pod stopami. Opcje (wszystkie opcjonalne):
+//   id, direction (1 / -1), speed (patrol, px/s), chaseSpeed (pościg),
+//   area { x1, y1, x2, y2 }  dwa rogi prostokąta, w którym może się poruszać (domyślnie: jego platforma),
+//   vision { angle, length, offsetX, offsetY, alpha }  nadpisuje pole widzenia z enemies.js.
 export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
 
 // Bomba: x = środek, y = powierzchnia, na której stoi. Opcjonalny hitbox: { hitbox: { w, h } }.
@@ -116,8 +118,10 @@ export const LEVELS = [
             spike(1264, 320, 2),  // podłoga przed ostatnim blokiem
         ],
         enemies: [
-            enemy("weak", 400, 224, { id: "weak-1", patrol: { minX: 368, maxX: 432, speed: 48 } }),
-            enemy("strong", 896, 208, { id: "strong-1", patrol: { minX: 856, maxX: 936, speed: 36 } }),
+            // Domyślnie przeciwnik patroluje całą platformę, na której stoi. Prostokąt `area` (dwa rogi)
+            // pozwala mu w pościgu zejść z niej na podłogę (y2 = 320 to górna krawędź podłogi).
+            enemy("weak", 400, 224, { id: "weak-1", speed: 48, area: { x1: 320, y1: 100, x2: 520, y2: 320 } }),
+            enemy("strong", 896, 208, { id: "strong-1", speed: 36 }),
         ],
     },
     {

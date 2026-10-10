@@ -8,7 +8,10 @@
 import { VIEW_WIDTH, VIEW_HEIGHT, TILE, SCALE, getScale, snap } from "./config.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport, getTextureSize } from "./textures.js";
-import { ENEMY_TYPES, canCuff, createEnemy, cuffEnemy as applyCuff, resetEnemy } from "./enemies.js";
+import {
+    ENEMY_TYPES, calmEnemy, canCuff, createEnemy, cuffEnemy as applyCuff, initEnemyArea, resetEnemy,
+    updateEnemy, visionPolygon,
+} from "./enemies.js";
 
 // Fizyka.
 const GRAVITY = 600 * SCALE;         // przyspieszenie w dół
@@ -251,6 +254,7 @@ export function createGame(initialLevel) {
             defused: false,
         }));
         enemies = (next.enemies ?? []).map(createEnemy);
+        enemies.forEach((enemy) => initEnemyArea(enemy, platforms));
         // Kolec w danych poziomu to prostokąt { x, y, w, h } (patrz spike() w levels.js).
         spikes = (next.spikes ?? []).map((data) => ({ texture: "spike", color: "#aab4bd", ...data }));
         syncSizes();
@@ -463,6 +467,7 @@ export function createGame(initialLevel) {
         if (player.hp > 0) {
             respawnPlayer();
             player.invulnerableTime = INVULNERABLE_TIME;
+            enemies.forEach(calmEnemy); // po powrocie do checkpointu nikt nie goni gracza
         }
         return true;
     }
@@ -509,20 +514,10 @@ export function createGame(initialLevel) {
         };
     }
 
+    // Ruch przeciwników: patrol, pole widzenia, pościg i grawitacja (patrz enemies.js).
     function updateEnemies(dt) {
-        for (const enemy of enemies) {
-            if (enemy.state !== "active") continue;
-            let centerX = enemy.x + enemy.w / 2 + enemy.direction * enemy.patrol.speed * dt;
-            if (centerX <= enemy.patrol.minX) {
-                centerX = enemy.patrol.minX;
-                enemy.direction = 1;
-            } else if (centerX >= enemy.patrol.maxX) {
-                centerX = enemy.patrol.maxX;
-                enemy.direction = -1;
-            }
-            enemy.x = centerX - enemy.w / 2;
-            enemy.facing = enemy.direction;
-        }
+        const world = { platforms, player, gravity: GRAVITY, maxFall: MAX_FALL_SPEED };
+        for (const enemy of enemies) updateEnemy(enemy, world, dt);
     }
 
     // Kontakt z aktywnym przeciwnikiem zabiera 1 HP, ale tylko gdy gracz jest PRZED nim (po stronie,
@@ -954,6 +949,43 @@ export function createGame(initialLevel) {
         ctx.fillRect(x + inset, y + h - u(5), w - inset * 2, u(appearance.armored ? 3 : 2));
     }
 
+    // Pole widzenia przeciwnika: półprzezroczysty stożek przycinany przez ściany. W pościgu robi się
+    // czerwony, po dotknięciu od tyłu pomarańczowy. Kąt, długość i przezroczystość: enemies.js.
+    function drawEnemyVision(ctx, enemy) {
+        if (enemy.state !== "active" || enemy.vision.alpha <= 0) return;
+        const points = visionPolygon(enemy, platforms);
+        const mode = enemy.ai.mode;
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, enemy.vision.alpha * (mode === "chase" ? 1.5 : 1));
+        ctx.fillStyle = mode === "chase" ? "#ff5a5a" : mode === "alert" ? "#ffb347" : ENEMY_TYPES[enemy.type].colors.vision;
+        ctx.beginPath();
+        points.forEach((point, i) => (i === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // Wykrzyknik nad głową: przeciwnik zauważył gracza albo został dotknięty od tyłu.
+    function drawExclaim(ctx, enemy) {
+        if (enemy.exclaim <= 0 || enemy.state !== "active") return;
+        const w = 6 * SCALE;
+        const h = 14 * SCALE;
+        const bob = Math.round(Math.sin(enemy.exclaim * 18) * SCALE);
+        const x = Math.round(enemy.x + enemy.w / 2 - w / 2);
+        const y = Math.round(enemy.y - h - 2 * SCALE + bob);
+        if (drawTexture(ctx, "exclamation", x, y, w, h)) return;
+
+        // Zastępnik: czerwony pasek z kropką i ciemnym obrysem.
+        const bar = 2 * SCALE;
+        const bx = Math.round(enemy.x + enemy.w / 2 - bar / 2);
+        ctx.fillStyle = "#1a0f12";
+        ctx.fillRect(bx - SCALE, y - SCALE, bar + 2 * SCALE, 9 * SCALE + SCALE);
+        ctx.fillRect(bx - SCALE, y + 10 * SCALE, bar + 2 * SCALE, bar + 2 * SCALE);
+        ctx.fillStyle = "#ff4d4d";
+        ctx.fillRect(bx, y, bar, 8 * SCALE);
+        ctx.fillRect(bx, y + 11 * SCALE, bar, bar);
+    }
+
     // Context prompt for the nearest available enemy or bomb.
     function drawInteractPrompt(ctx) {
         const interactEnemy = nearbyEnemy("interact", INTERACT_RANGE);
@@ -1111,6 +1143,24 @@ export function createGame(initialLevel) {
                 INTERACT_RANGE, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
+
+            if (enemy.state !== "active") continue;
+            // Prostokąt ruchu (niebieski, przerywany) i obrys pola widzenia (żółty; czerwony, gdy widzi gracza).
+            ctx.strokeStyle = "rgba(90, 200, 255, 0.7)";
+            ctx.setLineDash([4, 3]);
+            outline(ctx, enemy.area.x1, enemy.area.y1, enemy.area.x2 - enemy.area.x1, enemy.area.y2 - enemy.area.y1);
+            ctx.setLineDash([]);
+            const cone = visionPolygon(enemy, platforms);
+            ctx.strokeStyle = enemy.ai.sees ? "rgba(255, 70, 70, 0.95)" : "rgba(255, 230, 90, 0.9)";
+            ctx.beginPath();
+            cone.forEach((point, i) => (i === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+            ctx.closePath();
+            ctx.stroke();
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `${5 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+            ctx.textAlign = "center";
+            const timer = enemy.ai.mode === "patrol" || enemy.ai.mode === "chase" ? "" : ` ${enemy.ai.timer.toFixed(1)}`;
+            ctx.fillText(`${enemy.ai.mode}${timer}`, enemy.x + enemy.w / 2, enemy.y + enemy.h + 7 * SCALE);
         }
 
         // Obrazek gracza (żółty, przerywany) i jego hitbox (zielony). Hitbox ręczny może być
@@ -1198,6 +1248,11 @@ export function createGame(initialLevel) {
             ...grappleDebugLines(),
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `przeciwnicy: ${enemyCounts.active} aktywnych / ${enemyCounts.cuffed} zakutych`,
+            ...enemies.filter((enemy) => enemy.state === "active").slice(0, 3).map((enemy) => {
+                const ai = enemy.ai;
+                const timer = ai.mode === "alert" || ai.mode === "search" ? ` ${ai.timer.toFixed(1)} s` : "";
+                return ` ${enemy.id}: ${ai.mode}${timer}  widzi: ${ai.sees ? "tak" : "nie"}  ${enemy.onGround ? "na ziemi" : "w powietrzu"}  patrzy: ${enemy.facing > 0 ? "→" : "←"}`;
+            }),
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `${level.name}: ${levelWidth}x${levelHeight} px   platform: ${platforms.length}`,
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
@@ -1298,7 +1353,9 @@ export function createGame(initialLevel) {
         for (const bomb of bombs) drawBomb(ctx, bomb);
 
         // Enemies are drawn separately from level geometry and bombs.
+        for (const enemy of enemies) drawEnemyVision(ctx, enemy);
         for (const enemy of enemies) drawEnemy(ctx, enemy);
+        for (const enemy of enemies) drawExclaim(ctx, enemy);
 
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
