@@ -136,6 +136,14 @@ Gdy plik z arkuszem się nie wczyta, gra pisze ostrzeżenie w konsoli i rysuje s
 | Animacja nie gra albo gra zła klatka | Zły `row` lub `frames`, albo warunek w `pickPlayerAnimation()`. Sprawdź linię „animacja” w debugu i konsolę. |
 | Animacja się nie zmienia po podmianie pliku | Przeglądarka trzyma starą wersję w pamięci podręcznej. Odśwież z `Ctrl+F5`. |
 
+## Zła odpowiedź, bomba dymna i skocznie
+
+**Zła odpowiedź przy bombie** nie kończy już gry: zabiera 20 sekund z timera (`WRONG_ANSWER_PENALTY` na górze `src/js/main.js`), wybrana odpowiedź zostaje wyłączona, a pytanie zostaje otwarte. Każde kolejne pudło kosztuje kolejne 20 s. Gdy czas spadnie do zera, poziom kończy się jak zwykle ("Czas minął"). Kara jest też widoczna w HUD pod timerem.
+
+**Bomba dymna (klawisz `F`).** Leci w linii prostej do najbliższego aktywnego przeciwnika w zasięgu haka (`SMOKE_RANGE` = `GRAPPLE_RANGE`). Po trafieniu w przeciwnika, w ścianę albo po przelocie całego zasięgu tworzy chmurę o promieniu 80 px, która trwa 6 s (rośnie na początku i kurczy się w ostatniej sekundzie). Przeciwnik, którego ciała dotyka chmura, jest oślepiony: nie ma stożka widzenia, nie zauważa gracza, a jeśli ścigał, przechodzi w tryb szukania i po 2 s wraca do patrolu. Nad oślepionym widać "?". Dym przenika przez ściany. Brak celu w zasięgu: rzut nie wychodzi i nie startuje cooldown (3 s, `SMOKE_COOLDOWN`). Wszystkie wartości (`SMOKE_*`) są na górze `src/js/game.js`. Wygląd: tekstury `smokeBomb` (pocisk) i `smokeCloud` (jeden kłębek chmury) w `textures.js`; bez plików rysowane są prosty kwadrat i kółka. Debug (`/`) pokazuje promienie chmur, linię do celu i liczbę oślepionych.
+
+**Skocznia (jump pad).** Wejście na nią wyrzuca gracza w górę na ok. 5,3 tila (`JUMP_PAD_SPEED` w `game.js`). Dodajesz ją w poziomie w liście `jumpPads`, np. `jumpPad(464, 320)` (x = lewa krawędź, y = powierzchnia pod nią, opcjonalnie `count` i `{ power: 1.2 }` zmieniające siłę). Nie działa, gdy gracz wisi na linie. Tekstura `jumpPad` (kafelek 32 × 8 px) w `textures.js`. W poziomie 1 jest przykładowa skocznia na podłodze przy pierwszej wieży.
+
 ## Platform types
 
 Level platforms are created with `platform(x, y, w, h, options)`. Platforms default to the existing fully solid behavior. Examples:

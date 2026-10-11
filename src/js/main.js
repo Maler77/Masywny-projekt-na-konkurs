@@ -90,12 +90,19 @@ applyDomTextures();
 // Elementy okna z pytaniem oraz ekranów końcowych.
 const bombTitle = document.querySelector("#bomb-title");
 const bombTimer = document.querySelector("#bomb-timer");
+const bombPenalty = document.querySelector("#bomb-penalty");
 const bombOptions = [...document.querySelectorAll(".bomb-panel__option")];
 const loseReason = document.querySelector("#lose-reason");
 const winSummary = document.querySelector("#win-summary");
 const winTime = document.querySelector("#win-time");
 const winNext = document.querySelector("#win-next");
 const LETTERS = ["A", "B", "C"];
+
+// Zła odpowiedź przy bombie zabiera tyle sekund z timera poziomu (a nie kończy gry). Zła odpowiedź
+// zostaje wyłączona, więc pytanie można dokończyć, ale każde pudło kosztuje. Gdy czas spadnie do zera,
+// poziom kończy się jak zwykle ("Czas minął").
+const WRONG_ANSWER_PENALTY = 20;
+const wrongAnswers = new Map(); // klucz bomby -> zbiór indeksów odpowiedzi, które już były złe
 
 // ---------- Stan gry ----------
 // "menu"    - menu główne, widoczne po otwarciu strony
@@ -153,6 +160,7 @@ function startGame(levelIndex = currentLevel) {
     game.loadLevel(LEVELS[levelIndex]);
     activeBomb = null;
     activeQuestion = null;
+    wrongAnswers.clear();
     pausedFromState = "playing";
     setState("playing");
     enterFullscreen();
@@ -247,16 +255,22 @@ function openBomb(bomb) {
     activeBomb = bomb;
     activeQuestion = question;
     bombTitle.textContent = question.question;
+    const wrong = wrongAnswers.get(bombKey) ?? new Set();
     bombOptions.forEach((button, index) => {
         button.hidden = false;
+        button.disabled = wrong.has(index); // wcześniej wybrana zła odpowiedź zostaje wyłączona
         button.textContent = `${LETTERS[index]}. ${question.answers[index]}`;
     });
+    bombPenalty.hidden = wrong.size === 0;
+    if (wrong.size > 0) bombPenalty.textContent = `Zła odpowiedź! −${WRONG_ANSWER_PENALTY} s (razy ${wrong.size})`;
     setState("bomb");
 }
 
-// Zła odpowiedź = przegrana, dobra = bomba rozbrojona (a po ostatniej wygrana).
+// Zła odpowiedź = kara czasowa (odpowiedź zostaje wyłączona), dobra = bomba rozbrojona (a po ostatniej wygrana).
 function answerBomb(index) {
     if (state !== "bomb" || !activeBomb || !activeQuestion || !Number.isInteger(index) || index < 0 || index > 2) return;
+    const bombKey = `${currentLevel}:${activeBomb.id}`;
+    if (wrongAnswers.get(bombKey)?.has(index)) return; // ta odpowiedź już była zła
 
     if (index === activeQuestion.correctAnswer) {
         game.defuse(activeBomb);
@@ -265,7 +279,16 @@ function answerBomb(index) {
         if (game.allDefused()) winGame();
         else setState("playing");
     } else {
-        loseGame("Zła odpowiedź. Bomba wybuchła!");
+        const wrong = wrongAnswers.get(bombKey) ?? new Set();
+        wrong.add(index);
+        wrongAnswers.set(bombKey, wrong);
+        game.addTimePenalty(WRONG_ANSWER_PENALTY);
+
+        bombOptions[index].disabled = true;
+        bombPenalty.hidden = false;
+        bombPenalty.textContent = `Zła odpowiedź! −${WRONG_ANSWER_PENALTY} s (razy ${wrong.size})`;
+        // Fokus przechodzi na pierwszą dostępną odpowiedź (wyłączony przycisk go traci).
+        bombOptions.find((button) => !button.disabled)?.focus({ preventScroll: true });
     }
 }
 

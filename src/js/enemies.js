@@ -103,6 +103,7 @@ export function createEnemy(data, index = 0) {
         support: null,               // platforma, na której przeciwnik stoi
         exclaim: 0,                  // ile jeszcze widać "!"
         aim: null,                   // kierunek stożka w radianach podczas pościgu (vision.track), poza nim null
+        blind: false,                // true, gdy stoi w chmurze dymu (nic nie widzi); ustawia updateEnemy()
         ai: { mode: "patrol", timer: 0, lastSeenX: null, sees: false },
     };
     enemy.homeX = enemy.x;
@@ -160,6 +161,7 @@ export function resetEnemy(enemy) {
     enemy.facing = enemy.homeDirection;
     enemy.exclaim = 0;
     enemy.aim = null;
+    enemy.blind = false;
     enemy.ai = { mode: "patrol", timer: 0, lastSeenX: null, sees: false };
 }
 
@@ -220,7 +222,7 @@ function visionBase(enemy) {
 // Czy przeciwnik widzi prostokąt `target` (hitbox gracza): któryś z 3 punktów (głowa, środek, nogi)
 // musi być w stożku (kąt i długość) i nie może być zasłonięty przez ścianę.
 export function canEnemySee(enemy, target, platforms) {
-    if (enemy.state !== "active") return false;
+    if (enemy.state !== "active" || enemy.blind) return false; // oślepiony dymem nic nie widzi
     const { angle, length } = enemy.vision;
     const origin = visionOrigin(enemy);
     const half = (angle / 2) * Math.PI / 180;
@@ -239,6 +241,18 @@ export function canEnemySee(enemy, target, platforms) {
         return true;
     }
     return false;
+}
+
+// Czy przeciwnik jest w chmurze dymu: jakakolwiek część jego ciała leży w promieniu chmury.
+// Dym przenika przez ściany (chmura "przykleja się" do ściany, w którą trafił pocisk, więc wróg
+// stojący tuż za nią też jest objęty). smokes = [{ x, y, r }].
+export function isBlinded(enemy, smokes) {
+    if (enemy.state !== "active") return false;
+    return smokes.some((smoke) => {
+        const nearestX = Math.max(enemy.x, Math.min(smoke.x, enemy.x + enemy.w));
+        const nearestY = Math.max(enemy.y, Math.min(smoke.y, enemy.y + enemy.h));
+        return Math.hypot(nearestX - smoke.x, nearestY - smoke.y) <= smoke.r;
+    });
 }
 
 // Wielokąt stożka widzenia przycięty przez ściany (do rysowania): lista punktów { x, y }.
@@ -464,9 +478,10 @@ function physics(enemy, command, world, dt) {
     }
 }
 
-// Jedna klatka przeciwnika. world = { platforms, player, gravity, maxFall }.
+// Jedna klatka przeciwnika. world = { platforms, player, gravity, maxFall, smokes }.
 export function updateEnemy(enemy, world, dt) {
     if (!enemy.area) initEnemyArea(enemy, world.platforms);
+    enemy.blind = world.smokes ? isBlinded(enemy, world.smokes) : false;
     enemy.exclaim = Math.max(0, enemy.exclaim - dt);
     const command = enemy.state === "active"
         ? think(enemy, world, dt)

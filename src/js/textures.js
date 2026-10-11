@@ -68,6 +68,14 @@ export const TEXTURES = {
     // Wykrzyknik nad przeciwnikiem, który zauważył gracza (rysowany w 6 x 14 px; bez pliku: czerwony wykrzyknik).
     exclamation: { src: null },  // np. "assets/exclamation.png"
 
+    // Skocznia (jump pad): kafelek 1 x 1/4 tila (32 x 8 px), powtarzany na całej szerokości.
+    jumpPad: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE / 4 }, // np. "assets/jump_pad.png"
+
+    // Bomba dymna: pocisk (rysowany w 8 x 8 px) i jedna "kłębka" chmury (chmura to kilka takich
+    // kłębków na sobie, kółko bez pliku). Obrazek kłębka narysuj półprzezroczysty, np. 32 x 32 px.
+    smokeBomb: { src: null },   // np. "assets/smoke_bomb.png"
+    smokeCloud: { src: null },  // np. "assets/smoke_puff.png"
+
     // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
     bomb: { src: null, trim: true },         // np. "assets/bomb.png"
     bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"
