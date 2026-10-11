@@ -22,7 +22,10 @@ src/
   js/game.js     Fizyka, rozgrywka i renderowanie obiektów
   js/levels.js   Definicje poziomów, bomb i przeciwników
   js/enemies.js  Typy przeciwników i reguły kajdankowania
+  js/animations.js  Sprite sheety i animacje (opis arkuszy + mechanizm)
   js/viewport.js Renderowanie i skalowanie obszaru gry
+assets/          Grafiki (tekstury, sprite sheety)
+tools/           Skrypty pomocnicze w Pythonie (generowanie i składanie sprite sheetów)
 ```
 
 Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij grę” uruchamia rozgrywkę i prosi przeglądarkę o tryb fullscreen. Menu pauzy pozostaje na pełnym ekranie podczas gry, gdy przeglądarka obsługuje blokadę klawisza Esc; przy braku tej obsługi Escape może wyjść z trybu przeglądarki, a gra pokaże menu pauzy w układzie wypełniającym stronę. Przycisk „Menu główne” kończy fullscreen. Obszar gry ma rozdzielczość 640 × 360 px (20 × 11,25 tila po 32 px, patrz `src/js/config.js`) i tymczasowe tło. Obraz jest skalowany do okna całkowitą skalą, żeby piksele były zawsze równe; przy proporcjach innych niż 16:9 renderer dodaje pasy. Jednostką w kodzie jest piksel gry (1/32 tila).
@@ -30,6 +33,108 @@ Menu główne jest pierwszym ekranem po otwarciu strony. Przycisk „Rozpocznij 
 ## Przeciwnicy
 
 Poziom 1 zawiera patrolującego przeciwnika słabego (E z bliska lub dash) i patrolującego silnego (E od tyłu, zgodnie z kierunkiem, w którym patrzy). Kontakt z aktywnym przeciwnikiem odrzuca gracza; silny przeciwnik odrzuca mocniej. Krótki cooldown zapobiega ciągłym uderzeniom. Nowych przeciwników dodawaj do `enemies` w definicji poziomu. Typy i dozwolone metody kajdankowania są zdefiniowane w `src/js/enemies.js`; aby dodać metodę, dopisz jej nazwę do `cuffMethods` i wywołaj `game.cuffEnemy(enemy, "nazwaMetody")` z odpowiedniej akcji gry.
+
+## Animacje i sprite sheety
+
+### Jak to działa
+
+Sprite sheet to jeden plik PNG, w którym leżą obok siebie wszystkie klatki animacji. Gra wycina z niego odpowiednią klatkę i zmienia ją kilka razy na sekundę. Arkusze opisujesz w `SPRITE_SHEETS` na górze `src/js/animations.js` (plik, rozmiar klatki, animacje), a to, **kiedy** gra która animacja, wybiera funkcja `pickPlayerAnimation()` w `src/js/game.js` na podstawie stanu gracza.
+
+Przykładowy arkusz gracza to `assets/player_sheet.png` (placeholder wygenerowany skryptem `tools/make_player_sheet.py`). Możesz go podmienić na własny plik o tym samym układzie i nic w kodzie nie trzeba zmieniać.
+
+### Zasady rysowania arkusza
+
+| Zasada | Dlaczego |
+| --- | --- |
+| **Wszystkie klatki mają ten sam rozmiar** (u nas 32 × 48 px) | Gra dzieli plik siatką `frameWidth × frameHeight`. Inny rozmiar klatek = poucinane i przesunięte obrazki. |
+| **Jeden wiersz = jedna animacja**, klatki od lewej do prawej | Tak gra znajduje klatki: wiersz `row`, kolumny od `column` (domyślnie 0) przez `frames` klatek. |
+| **Szerokość pliku = liczba kolumn × szerokość klatki** (u nas 6 × 32 = 192), wysokość = liczba wierszy × wysokość klatki (8 × 48 = 384) | Brak odstępów, ramek i marginesów między klatkami. Nieużywane pola zostają puste (przezroczyste). |
+| **Stopy na samym dole klatki, postać na środku poziomo** w każdej klatce | Klatka stoi dolnym środkiem na dolnym środku hitboxa. Jeśli stopy w jednej klatce są wyżej, postać „podskakuje” albo wchodzi w podłogę. |
+| **Postać patrzy w prawo** | Przy chodzeniu w lewo gra odbija klatkę lustrzanie. |
+| **Przezroczyste tło** (PNG z kanałem alfa) | Gra nie zamalowuje tła. |
+| **Ostre piksele: bez antyaliasingu, bez półprzezroczystych krawędzi, bez wygładzania przy skalowaniu** | Gra jest pixel-art. 1 piksel obrazka = 1 piksel gry, skaluje ją sama (całkowitą skalą). Nie powiększaj ani nie obracaj klatek w programie graficznym. |
+| **Nie przycinaj klatek** (żadnego „trim”) | `trim` z `textures.js` nie dotyczy arkuszy: przycięte klatki miałyby różne rozmiary i by się rozjechały. |
+
+### Rozmiar klatki a hitbox
+
+Rozmiar postaci w grze to rozmiar klatki (32 × 48 px = 1 × 1,5 tila). **Hitbox jest osobno** i dalej ustawiasz go ręcznie (`PLAYER_HITBOX` w `game.js`, obecnie 24 × 44 px) albo wpisujesz `"auto"` (wtedy hitbox = cała klatka). Hitbox stoi tym samym dolnym środkiem co klatka, więc narysuj postać tak, żeby jej tułów mieścił się mniej więcej w hitboxie (u nas ok. 16 px szerokości i 44 px wysokości w klatce 32 × 48), a zapas po bokach zostaw na wyciągnięte ręce, linie prędkości dasha itp.
+
+Jak wybrać rozmiar klatki: weź największą pozę (np. wyskok z rękami w górę, dash z liniami prędkości), dodaj kilka pikseli zapasu i **zostaw ten rozmiar dla wszystkich animacji**. Zmiana rozmiaru klatki w środku projektu oznacza przerysowanie całego arkusza.
+
+### Animacje gracza w przykładowym arkuszu
+
+| Wiersz | Nazwa | Klatek | fps | Kiedy gra |
+| --- | --- | --- | --- | --- |
+| 0 | `idle` | 4 | 4 | stoi na ziemi |
+| 1 | `run` | 6 | 12 | biegnie po ziemi (także na haku, gdy stoi na ziemi) |
+| 2 | `jump` | 2 | 8 (bez pętli) | w powietrzu, leci w górę |
+| 3 | `fall` | 2 | 8 | w powietrzu, spada |
+| 4 | `dash` | 2 | 12 | podczas dasha |
+| 5 | `wallslide` | 2 | 6 | zsuwa się po ścianie (ściana jest po PRAWEJ stronie klatki, gra odbija ją, gdy ściana jest po lewej) |
+| 6 | `swing` | 2 | 6 | huśta się na haku w powietrzu |
+| 7 | `hurt` | 2 | 10 (bez pętli) | chwilę po utracie życia (0,3 s); po nietykalności postać jeszcze miga |
+
+Kolejność sprawdzania w `pickPlayerAnimation()`: hurt, dash, swing, ściana, skok/spadanie, bieg, idle. Cienie po dashu rysują klatki z chwili ich powstania.
+
+### Jak zrobić arkusz krok po kroku
+
+1. **Ustal rozmiar klatki** (np. 32 × 48) i listę animacji z liczbą klatek (tabela wyżej).
+2. **Narysuj klatki** w programie do pixel-artu, np. Aseprite (płatny, najwygodniejszy), LibreSprite (darmowy, podobny), Piskel (darmowy, w przeglądarce) lub Pixelorama (darmowy). Ustaw płótno na rozmiar JEDNEJ klatki i rysuj kolejne klatki na osi czasu. Stopy rysuj zawsze na ostatnim rzędzie pikseli, środek postaci na środku płótna. Włącz siatkę i podgląd animacji, żeby widzieć, czy postać nie „pływa”.
+3. **Złóż arkusz** jedną z dwóch metod:
+   - **Aseprite / LibreSprite:** `File > Export Sprite Sheet`, `Layout: Sheet Type = By Rows`, `Constraints = Fixed # of Columns` (liczba kolumn = klatki najdłuższej animacji, np. 6), `Borders`: wszystkie odstępy i „Trim” wyłączone (padding 0, bez Trim Sprite / Trim Cells, bez Merge Duplicates). Ten tryb wstawia klatki po kolei, więc wiersz zaczyna się dopiero po zapełnieniu poprzedniego. Jeśli animacje mają różną liczbę klatek, wygodniej użyć metody niżej.
+   - **Skryptem w Pythonie** (działa z każdym programem, który umie wyeksportować klatki jako osobne PNG, a Aseprite robi to przez `File > Export` z opcją „Save as separate files”): ułóż klatki w katalogach `0_idle/0.png 1.png ...`, `1_run/...` i uruchom
+     ```bash
+     python tools/pack_sheet.py assets/player_frames assets/player_sheet.png
+     ```
+     Skrypt złoży arkusz (wiersz = animacja), sprawdzi, czy wszystkie klatki mają ten sam rozmiar, i wypisze gotowy wpis do `SPRITE_SHEETS`. Wymaga Pillow (`pip install pillow`).
+4. **Zapisz jako PNG** w `assets/` (np. `assets/player_sheet.png`). Plik musi mieć kanał alfa i nie może być wygładzany ani przeskalowany.
+5. **Opisz arkusz w `src/js/animations.js`:** `src`, `frameWidth`, `frameHeight` i animacje (`row`, `frames`, `fps`, opcjonalnie `loop: false` i `column`). Dla animacji, której klatki nie zaczynają się w pierwszej kolumnie, wpisz `column`.
+6. **Sprawdź w grze:** uruchom serwer (`python -m http.server 8000`), włącz debug klawiszem `/`. Linia „animacja” pokazuje aktualną animację i klatkę (np. `run [3/6]`), a ramka hitboxa pokazuje, jak postać stoi względem hitboxa. Błędy opisu (zły rozmiar pliku, nieistniejący wiersz, za mało kolumn) gra wypisuje w konsoli przeglądarki (F12).
+
+### Dodawanie nowej animacji gracza
+
+1. Dorysuj nowy wiersz w arkuszu (np. `crouch` jako wiersz 8; plik robi się o jedną klatkę wyższy).
+2. Dopisz go w `SPRITE_SHEETS.player.animations`:
+   ```js
+   crouch: { row: 8, frames: 2, fps: 6 },
+   ```
+3. W `pickPlayerAnimation()` w `game.js` dopisz warunek, kiedy ma grać, np. `if (player.crouching) return "crouch";`. Jeśli nazwy animacji nie ma w arkuszu, gra pokaże `idle` (a gdy go nie ma, pierwszą z listy).
+
+### Animacje innych obiektów (np. przeciwnika)
+
+Arkusz opisujesz tak samo w `SPRITE_SHEETS` (np. `enemyWeak: {...}`), a obiektowi dajesz własnego animatora:
+
+```js
+import { createAnimator } from "./animations.js";
+
+const animator = createAnimator("enemyWeak");
+
+// co klatkę:
+animator.play(enemy.state === "chase" ? "run" : "walk"); // zmiana nazwy zaczyna animację od początku
+animator.update(dt);
+
+// przy rysowaniu (x, y, w, h to prostokąt, w którym ma stanąć klatka):
+if (!animator.draw(ctx, x, y, w, h)) {
+    // brak arkusza: rysuj zwykłą teksturę albo kolorowy prostokąt
+}
+```
+
+Dla obiektu z hitboxem rozmiar obrazka możesz pobrać przez `getSheetFrameSize("enemyWeak")`. Gracz używa dokładnie tego mechanizmu (patrz `syncSize()` i `drawPlayer()` w `game.js`).
+
+### Co robi gra, gdy arkusza brakuje
+
+Gdy plik z arkuszem się nie wczyta, gra pisze ostrzeżenie w konsoli i rysuje statyczną teksturę `player` z `textures.js` (z przycięciem), a gdy i jej nie ma, kolorowy prostokąt. Dzięki temu gra działa, zanim powstanie jakakolwiek grafika.
+
+### Typowe problemy
+
+| Objaw | Przyczyna |
+| --- | --- |
+| Postać „podskakuje” albo drży między klatkami | Stopy lub środek postaci w różnych klatkach są w innych miejscach. Wyrównaj do dolnej krawędzi i środka klatki. |
+| Postać jest rozciągnięta, ucięta albo widać kawałek sąsiedniej klatki | `frameWidth` / `frameHeight` w `animations.js` nie zgadzają się z rzeczywistym rozmiarem klatki w pliku (albo w pliku są odstępy lub marginesy). |
+| Obraz jest rozmyty | Plik został przeskalowany albo wygładzony przy eksporcie. Eksportuj w skali 100% bez wygładzania. |
+| Postać stoi lub chodzi odwrócona | Klatki są narysowane w lewo. Rysuj zawsze w prawo. |
+| Animacja nie gra albo gra zła klatka | Zły `row` lub `frames`, albo warunek w `pickPlayerAnimation()`. Sprawdź linię „animacja” w debugu i konsolę. |
+| Animacja się nie zmienia po podmianie pliku | Przeglądarka trzyma starą wersję w pamięci podręcznej. Odśwież z `Ctrl+F5`. |
 
 ## Platform types
 

@@ -8,6 +8,7 @@
 import { VIEW_WIDTH, VIEW_HEIGHT, TILE, SCALE, getScale, snap } from "./config.js";
 import { createCamera } from "./camera.js";
 import { drawBackground, drawBox, drawTexture, getTextureReport, getTextureSize } from "./textures.js";
+import { createAnimator, getSheetFrameSize, getSheetReport } from "./animations.js";
 import {
     ENEMY_TYPES, calmEnemy, canCuff, createEnemy, cuffEnemy as applyCuff, initEnemyArea, resetEnemy,
     updateEnemy, visionPolygon,
@@ -154,7 +155,8 @@ export function createGame(initialLevel) {
         jumpBuffer: 0,         // ile jeszcze liczy się wcześniej wciśnięty skok
         canCutJump: false,     // czy puszczenie klawisza skróci skok (tylko skok z ziemi)
         airCarry: false,       // po odpięciu liny: zachowuje pęd poziomy w powietrzu (do lądowania)
-        texture: "player",     // nazwa z textures.js
+        sheet: "player",       // sprite sheet z animations.js (animacje); bez pliku gra użyje tekstury
+        texture: "player",     // nazwa z textures.js (statyczny obrazek, gdy brak sprite sheetu)
         color: "#79d7c4",      // kolor zastępczy, gdy brak tekstury
     };
 
@@ -175,6 +177,9 @@ export function createGame(initialLevel) {
 
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
+
+    // Animacje gracza (sprite sheet z animations.js).
+    const animator = createAnimator(player.sheet);
     let grappleTarget = null;
     let grappleLength = 0;
     let grappleCooldown = 0;
@@ -195,7 +200,8 @@ export function createGame(initialLevel) {
     // Przy zmianie rozmiaru zostaje na miejscu dolny środek obiektu, więc stoi dalej na tej samej
     // platformie (np. gdy tekstura wczyta się później).
     function syncSize(entity) {
-        const size = getTextureSize(entity.texture);
+        // Rozmiar obrazka: klatka sprite sheetu, a jak go nie ma, przycięta tekstura, a jak jej nie ma, zastępczy.
+        const size = (entity.sheet && getSheetFrameSize(entity.sheet)) || getTextureSize(entity.texture);
         const sprite = size ?? entity.fallback;
         const box = entity.hitbox === "auto" ? sprite : entity.hitbox;
 
@@ -226,6 +232,29 @@ export function createGame(initialLevel) {
             w: entity.sprite.w,
             h: entity.sprite.h,
         };
+    }
+
+    // Wybiera animację gracza na podstawie jego stanu (kolejność ma znaczenie: pierwszy pasujący wygrywa).
+    // Nazwy animacji są w animations.js; tu decydujesz, kiedy która gra.
+    function pickPlayerAnimation() {
+        if (hurtFlash > 0 || player.hp <= 0) return "hurt";
+        if (player.dashTime > 0) return "dash";
+        if (grappleTarget && !player.onGround) return "swing";
+        if (!player.onGround) {
+            if (player.wallDir !== 0 && player.vy > 0 && player.wallSlideTime < WALL_SLIDE_DURATION) return "wallslide";
+            return player.vy < 0 ? "jump" : "fall";
+        }
+        return Math.abs(player.vx) > 8 * SCALE ? "run" : "idle";
+    }
+
+    // W zsuwaniu po ścianie postać patrzy w stronę ściany (arkusz ma ręce na ścianie po prawej).
+    function playerFacing(anim) {
+        return anim === "wallslide" && player.wallDir !== 0 ? player.wallDir : player.facing;
+    }
+
+    function updateAnimation(dt) {
+        animator.play(pickPlayerAnimation());
+        animator.update(dt);
     }
 
     // Wczytuje poziom z levels.js i ustawia grę od początku.
@@ -788,7 +817,7 @@ export function createGame(initialLevel) {
             if (ghosts[i].life <= 0) ghosts.splice(i, 1);
         }
         if (player.dashTime > 0) {
-            ghosts.push({ x: player.x, y: player.y, facing: player.facing, life: GHOST_LIFE });
+            ghosts.push({ x: player.x, y: player.y, facing: player.facing, pose: animator.pose(), life: GHOST_LIFE });
         }
 
         // 10) Zabezpieczenie: gdyby gracz wypadł poza poziom
@@ -796,6 +825,9 @@ export function createGame(initialLevel) {
 
         // 11) Kamera goni gracza (pionowo ze strefą martwą)
         camera.follow(player, dt);
+
+        // 12) Animacja gracza zależna od jego stanu
+        updateAnimation(dt);
 
         // Dash cuffing uses the existing dash movement and resolved player hitbox.
         // Only a target in front of the dash can be hit; no separate dash mechanic is added.
@@ -828,7 +860,7 @@ export function createGame(initialLevel) {
 
     // Gracz. Pozycja NIE jest zaokrąglana do pikseli gry (ruch jest płynny), tylko wyrównana do
     // pikseli ekranu (snap), żeby piksele były ostre. Odbicie lustrzane obejmuje cały obrazek.
-    function drawPlayer(ctx, x, y, facing, alpha = 1, scale = 1) {
+    function drawPlayer(ctx, x, y, facing, alpha = 1, scale = 1, pose = animator.pose()) {
         const r = spriteRect(player, x, y);
         const sx = snap(r.x, scale);
         const sy = snap(r.y, scale);
@@ -838,7 +870,9 @@ export function createGame(initialLevel) {
         ctx.translate(facing > 0 ? sx : sx + r.w, sy);
         ctx.scale(facing, 1);
 
-        if (!drawTexture(ctx, player.texture, 0, 0, r.w, r.h)) {
+        // Kolejność: klatka z sprite sheetu, statyczna tekstura, kolorowy prostokąt.
+        const animated = pose.anim && animator.drawFrame(ctx, pose.anim, pose.frame, 0, 0, r.w, r.h);
+        if (!animated && !drawTexture(ctx, player.texture, 0, 0, r.w, r.h)) {
             ctx.fillStyle = player.color;
             ctx.fillRect(0, 0, r.w, r.h);
             ctx.fillStyle = "#10201f"; // oko, żeby było widać, w którą stronę patrzy
@@ -1231,6 +1265,7 @@ export function createGame(initialLevel) {
                 ? `cooldown ${player.dashCooldown.toFixed(2)} s`
                 : "gotowy";
         const tex = getTextureReport();
+        const sheetReport = getSheetReport();
         const scale = ctx.getTransform ? ctx.getTransform().a : 1; // skala viewportu (px ekranu na px gry)
         const wallCooldown = Math.max(0, SAME_WALL_COOLDOWN - player.sinceWallJump);
         const enemyCounts = activeEnemyCounts();
@@ -1256,6 +1291,7 @@ export function createGame(initialLevel) {
             `kamera:   x=${camera.x.toFixed(1)}  y=${camera.y.toFixed(1)}`,
             `${level.name}: ${levelWidth}x${levelHeight} px   platform: ${platforms.length}`,
             `tekstury: ok=${tex.ok} błąd=${tex.error} brak=${tex.none}` + (tex.loading ? ` ładuje=${tex.loading}` : ""),
+            `animacja: ${animator.name ?? "-"} [${animator.frame + 1}/${animator.frames}]   arkusze: ok=${sheetReport.ok} błąd=${sheetReport.error}` + (sheetReport.loading ? ` ładuje=${sheetReport.loading}` : ""),
         ];
 
         const lineHeight = 7 * SCALE;
@@ -1359,11 +1395,11 @@ export function createGame(initialLevel) {
 
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
-            drawPlayer(ctx, g.x, g.y, g.facing, (g.life / GHOST_LIFE) * 0.45, scale);
+            drawPlayer(ctx, g.x, g.y, g.facing, (g.life / GHOST_LIFE) * 0.45, scale, g.pose);
         }
         // Po utracie HP gracz miga (jest nietykalny).
         const blinkHidden = player.invulnerableTime > 0 && Math.floor(player.invulnerableTime * 12) % 2 === 0;
-        drawPlayer(ctx, player.x, player.y, player.facing, blinkHidden ? 0.35 : 1, scale);
+        drawPlayer(ctx, player.x, player.y, playerFacing(animator.name), blinkHidden ? 0.35 : 1, scale);
 
         if (hud) drawInteractPrompt(ctx);
         if (debug) drawDebugWorld(ctx);
@@ -1390,6 +1426,10 @@ export function createGame(initialLevel) {
         reset,
         loadLevel,
         getGrappleTargets: () => platforms.filter((platform) => platform.grappleable === true),
+        // Aktualna animacja gracza (tylko do odczytu; używa jej debug i testy).
+        get animation() {
+            return { name: animator.name, frame: animator.frame, frames: animator.frames };
+        },
         // Stan haka (tylko do odczytu; używa go m.in. debug i testy).
         get grapple() {
             return {
