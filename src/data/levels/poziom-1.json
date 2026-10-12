@@ -1,0 +1,175 @@
+{
+  "name": "Poziom 1",
+  "subtitle": "Rozgrzewka",
+  "questionCategory": "easy",
+  "background": [
+    "background"
+  ],
+  "timeLimit": 60,
+  "width": 1600,
+  "height": 360,
+  "thumbnail": "level1Thumbnail",
+  "spawn": {
+    "x": 64,
+    "y": 320
+  },
+  "platforms": [
+    {
+      "x": 0,
+      "y": 320,
+      "w": 1600,
+      "h": 40,
+      "texture": "ground"
+    },
+    {
+      "x": 64,
+      "y": 256,
+      "w": 96,
+      "h": 12,
+      "texture": "platform",
+      "color": "#5c8790",
+      "oneWay": true
+    },
+    {
+      "x": 304,
+      "y": -3,
+      "w": 24,
+      "h": 24,
+      "texture": "platform",
+      "color": "#d1a94f",
+      "solid": false,
+      "grappleable": true
+    },
+    {
+      "x": 200,
+      "y": 0,
+      "w": 24,
+      "h": 24,
+      "texture": "platform",
+      "color": "#d1a94f",
+      "solid": false,
+      "grappleable": true
+    },
+    {
+      "x": 192,
+      "y": 272,
+      "w": 96,
+      "h": 48,
+      "texture": "platform"
+    },
+    {
+      "x": 352,
+      "y": 224,
+      "w": 96,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 512,
+      "y": 176,
+      "w": 96,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 672,
+      "y": 224,
+      "w": 96,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 784,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 832,
+      "y": 208,
+      "w": 128,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 1000,
+      "y": 160,
+      "w": 96,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 1168,
+      "y": 208,
+      "w": 96,
+      "h": 32,
+      "texture": "platform"
+    },
+    {
+      "x": 1328,
+      "y": 272,
+      "w": 128,
+      "h": 48,
+      "texture": "platform"
+    }
+  ],
+  "bombs": [
+    {
+      "x": 560,
+      "y": 176
+    },
+    {
+      "x": 1048,
+      "y": 160
+    },
+    {
+      "x": 1392,
+      "y": 272
+    }
+  ],
+  "enemies": [
+    {
+      "type": "weak",
+      "x": 400,
+      "y": 224,
+      "id": "weak-1",
+      "speed": 48,
+      "area": {
+        "x1": 320,
+        "y1": 100,
+        "x2": 520,
+        "y2": 320
+      }
+    },
+    {
+      "type": "strong",
+      "x": 896,
+      "y": 208,
+      "id": "strong-1",
+      "speed": 36
+    }
+  ],
+  "spikes": [
+    {
+      "x": 576,
+      "y": 312,
+      "w": 64,
+      "h": 8
+    },
+    {
+      "x": 1264,
+      "y": 312,
+      "w": 64,
+      "h": 8
+    }
+  ],
+  "jumpPads": [
+    {
+      "x": 464,
+      "y": 312,
+      "w": 32,
+      "h": 8
+    }
+  ]
+}
