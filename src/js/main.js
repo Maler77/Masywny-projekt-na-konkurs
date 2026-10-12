@@ -5,6 +5,12 @@ import { createMenu } from "./menu.js";
 import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
 import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
+import { createEditor } from "./editor.js";
+import { loadJsonLevels, normalizeLevel } from "./levelstore.js";
+
+// Poziomy z plików JSON (src/data/levels/index.json) dochodzą po poziomach z levels.js.
+LEVELS.push(...await loadJsonLevels());
+const baseLevelCount = LEVELS.length; // poziom testowany z edytora dostaje miejsce za nimi
 
 let questionQueues;
 try {
@@ -137,6 +143,7 @@ const menu = createMenu({
     resume: resumeGame,
     quit: quitToMenu,
     answer: (data) => answerBomb(Number(data.index)),
+    editor: () => openEditor(),                          // "Edytor poziomów" w menu głównym
 });
 
 function setState(next) {
@@ -153,6 +160,60 @@ function setState(next) {
     else menu.show(SCREEN_FOR_STATE[next]);
 }
 
+// ---------- Edytor poziomów (editor.js) ----------
+// Z edytora można przetestować poziom: gra uruchamia go jako ostatni na liście LEVELS, a przyciski
+// "Menu główne" / "Powrót do menu" wracają wtedy do edytora zamiast do menu.
+let testingFromEditor = false;
+
+const editor = createEditor({
+    canvas,
+    container: canvas.closest(".game") ?? document.body,
+    builtinLevels: LEVELS.slice(),
+    onTest: startEditorTest,
+    onExit: closeEditor,
+});
+
+function openEditor() {
+    setState("editor");
+    editor.open();
+}
+
+function closeEditor() {
+    editor.close();
+    setState("menu");
+}
+
+function setQuitLabels() {
+    for (const button of document.querySelectorAll('[data-action="quit"]')) {
+        button.dataset.label ??= button.textContent;
+        button.textContent = testingFromEditor ? "Wróć do edytora" : button.dataset.label;
+    }
+}
+
+function startEditorTest(rawLevel) {
+    let level;
+    try {
+        level = normalizeLevel(rawLevel);
+    } catch (error) {
+        window.alert(`Poziom ma błąd: ${error.message}`);
+        return;
+    }
+    LEVELS.length = baseLevelCount;
+    LEVELS.push(level);
+    testingFromEditor = true;
+    setQuitLabels();
+    editor.close();
+    startGame(baseLevelCount);
+}
+
+function endEditorTest() {
+    testingFromEditor = false;
+    LEVELS.length = baseLevelCount;
+    setQuitLabels();
+    setState("editor");
+    editor.resume();
+}
+
 // Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
 function startGame(levelIndex = currentLevel) {
     if (!LEVELS[levelIndex]) return;
@@ -163,7 +224,7 @@ function startGame(levelIndex = currentLevel) {
     wrongAnswers.clear();
     pausedFromState = "playing";
     setState("playing");
-    enterFullscreen();
+    if (!testingFromEditor) enterFullscreen();
 }
 
 // Fullscreen is requested from the user's Play click. Keyboard Lock lets Escape
@@ -219,6 +280,10 @@ function quitToMenu() {
     game.reset();
     activeBomb = null;
     activeQuestion = null;
+    if (testingFromEditor) {
+        endEditorTest();
+        return;
+    }
     exitFullscreen();
     setState("menu");
 }
@@ -382,9 +447,16 @@ function frame(now) {
 
     input.endFrame();
 
-    const ctx = viewport.begin();
-    game.draw(ctx, { debug, fps, hud: state === "playing" });
-    viewport.end();
+    if (state === "editor") {
+        // Edytor rysuje na całym canvasie (bez skali i pasów gry).
+        editor.update(dt);
+        editor.draw(viewport.beginRaw());
+        viewport.endRaw();
+    } else {
+        const ctx = viewport.begin();
+        game.draw(ctx, { debug, fps, hud: state === "playing" });
+        viewport.end();
+    }
 
     requestAnimationFrame(frame);
 }

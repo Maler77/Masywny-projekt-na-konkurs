@@ -33,7 +33,11 @@ export function createInput() {
     const onKeyDown = (event) => {
         const code = codeOf(event);
         // Na przycisku menu zostawiamy domyślne działanie (Spacja i Enter mają go "klikać").
-        const onButton = event.target instanceof HTMLButtonElement;
+        // W polach tekstowych i listach (edytor) klawisze działają normalnie, np. można wpisać "a" albo spację.
+        const onButton = event.target instanceof HTMLButtonElement
+            || event.target instanceof HTMLInputElement
+            || event.target instanceof HTMLSelectElement
+            || event.target instanceof HTMLTextAreaElement;
         if (GAME_KEYS.has(code) && !onButton) event.preventDefault();
         // Przytrzymany klawisz wysyła powtórzenia; liczymy tylko pierwsze wciśnięcie.
         if (!event.repeat) pressed.add(code);

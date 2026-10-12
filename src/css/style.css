@@ -206,6 +206,7 @@ kbd {
 .controls-corner kbd { margin-right: .15rem; padding: 0 .3rem; }
 
 body[data-state="playing"] .controls-corner { opacity: 0; }
+body[data-state="editor"] .controls-corner,
 body[data-state="bomb"] .controls-corner,
 body[data-state="won"] .controls-corner,
 body[data-state="lost"] .controls-corner { display: none; }
@@ -226,3 +227,51 @@ body.cursor-hidden .game { cursor: none; }
     text-decoration: line-through;
     cursor: not-allowed;
 }
+/* ---------- Edytor poziomów (editor.js) ---------- */
+.editor { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
+.editor[hidden] { display: none; }
+
+.editor__panel {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    width: 17.5rem; overflow-y: auto; padding: .75rem;
+    border-right: 1px solid #2a3948; background: rgb(14 21 29 / .96);
+    color: #cdd7e2; font-size: .8rem; pointer-events: auto;
+}
+.editor__head { display: grid; gap: .5rem; margin-bottom: .5rem; }
+.editor__title { margin: 0; font-size: 1rem; }
+.editor__heading { margin: 1rem 0 .4rem; color: #79d7c4; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+.editor__group { margin: .6rem 0 .25rem; color: #8fa1b3; font-size: .7rem; font-weight: 600; }
+.editor__section { display: grid; gap: .4rem; }
+.editor__tools { gap: .25rem; }
+.editor__row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.editor__grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.editor__hint { margin: 0; color: #8fa1b3; font-size: .72rem; line-height: 1.35; }
+.editor details > summary { cursor: pointer; margin: .5rem 0; color: #79d7c4; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+
+.editor__button, .editor__select, .editor__field input, .editor__field select {
+    border: 1px solid #3b4c5d; border-radius: .35rem; background: #1b2937; color: inherit; font: inherit;
+}
+.editor__button { padding: .35rem .6rem; cursor: pointer; }
+.editor__button:hover { background: #26384b; }
+.editor__button--primary { border-color: #a4f1dc; background: #79d7c4; color: #10201f; font-weight: 700; }
+.editor__button--primary:hover { background: #a4f1dc; }
+.editor__button--danger { border-color: #7a3a41; background: #3a1d22; }
+.editor__tool { width: 100%; text-align: left; }
+.editor__tool.is-active { border-color: #79d7c4; background: #214a45; font-weight: 700; }
+.editor__select { padding: .3rem; max-width: 100%; }
+.editor__field { display: grid; gap: .15rem; }
+.editor__field--wide { grid-column: 1 / -1; }
+.editor__field span { color: #8fa1b3; font-size: .68rem; }
+.editor__field input, .editor__field select { width: 100%; min-width: 0; padding: .3rem .4rem; }
+.editor__check { display: flex; align-items: center; gap: .4rem; }
+.editor__inline { display: inline-flex; align-items: center; gap: .4rem; }
+.editor__zoom { min-width: 2rem; text-align: center; }
+.editor__preview { max-width: 100%; max-height: 8rem; image-rendering: pixelated; border: 1px solid #3b4c5d; background: #0e151d; }
+
+/* Pasek stanu u dołu mapy: nie przechwytuje myszy, żeby kamera przy dolnej krawędzi działała. */
+.editor__status {
+    position: absolute; left: 18.25rem; right: .75rem; bottom: .75rem; padding: .35rem .6rem;
+    border-radius: .4rem; background: rgb(10 15 22 / .78); color: #cdd7e2; font-size: .75rem; pointer-events: none;
+}
+.editor__status.is-flash { background: rgb(33 74 69 / .92); color: #fff; }
+.editor__status.is-area { background: rgb(20 70 100 / .92); color: #fff; font-weight: 700; }
