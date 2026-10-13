@@ -1,254 +1,306 @@
 // ============================================================================
-//  POZIOMY
-//  Każdy poziom to wpis w tablicy LEVELS na dole pliku. Menu główne samo tworzy
-//  z niej listę poziomów, więc nowy poziom to tylko nowy wpis (nic więcej nie trzeba).
+//  POZIOMY W PLIKACH JSON
+//  Poza poziomami zapisanymi w kodzie (levels.js) gra wczytuje poziomy z plików JSON w katalogu
+//  src/data/levels/. Wystarczy wrzucić tam plik *.json (np. pobrany z edytora: menu główne ->
+//  "Edytor poziomów" -> "Pobierz JSON") i odświeżyć stronę: poziom sam pojawi się w menu.
 //
-//  JEDNOSTKI: piksele gry. 1 tile = 32 px (stała TILE), ekran ma 640 x 360 px (20 x 11,25 tila).
-//  Współrzędne: x rośnie w prawo, y w dół, (0, 0) to lewy górny róg poziomu.
+//  JAK GRA ZNAJDUJE PLIKI
+//    1. Przeglądarka nie umie wylistować katalogu, ale lokalny serwer (python -m http.server) wystawia
+//       jego listing jako stronę HTML, więc gra czyta z niej nazwy plików *.json. Dzięki temu nie trzeba
+//       nic dopisywać.
+//    2. Hosting bez listingu katalogu (np. GitHub Pages) takiej strony nie ma. Wtedy gra korzysta z
+//       src/data/levels/index.json, czyli listy plików:   { "levels": ["poziom-1.json", "inny.json"] }
+//       Wygenerujesz ją jednym poleceniem:  python tools/make_levels_index.py
+//       (index.json jest też zawsze brany pod uwagę lokalnie: pliki z niego idą w menu pierwsze,
+//       w podanej kolejności, a pozostałe po nich, sortowane po nazwie pliku).
 //
-//  POLA POZIOMU
-//    name        nazwa widoczna w menu i w grze
-//    subtitle    krótki opis na karcie w menu (opcjonalnie)
-//    thumbnail   nazwa tekstury z textures.js dla miniatury w menu (opcjonalnie)
-//    background  warstwy tła: nazwy tekstur z textures.js, od najdalszej (opcjonalnie)
-//    timeLimit   czas na rozbrojenie wszystkich bomb, w sekundach
-//    width       szerokość poziomu w px
-//    height      wysokość poziomu w px (opcjonalnie, domyślnie 360 = jeden ekran)
-//    spawn       { x, y } miejsce startu: dolny środek gracza (x = środek, y = powierzchnia pod stopami)
-//    platforms   lista platform (patrz funkcje pomocnicze niżej)
-//    bombs       lista położeń bomb (pytania są w src/data/questions.json)
-//    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
-//    spikes      opcjonalna lista kolców, np. spike(x, y) albo spike(x, y, 3) (patrz niżej)
-//    jumpPads    opcjonalna lista skoczni, np. jumpPad(x, y) albo jumpPad(x, y, 2, { power: 1.2 }) (patrz niżej)
-//    hp          opcjonalnie: życie gracza na tym poziomie (domyślnie PLAYER_MAX_HP w game.js = 3)
+//  KOLEJNOŚĆ I DUPLIKATY
+//    Poziomy z levels.js są pierwsze. Poziom JSON o TEJ SAMEJ NAZWIE (pole "name") co poziom z kodu
+//    zastępuje go w tym samym miejscu menu, więc po przeniesieniu poziomu z kodu do JSON nie ma
+//    duplikatu. Pozostałe poziomy JSON dochodzą na końcu. Uszkodzony plik jest pomijany z ostrzeżeniem
+//    w konsoli przeglądarki (F12), reszta poziomów działa dalej.
 //
-//  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
-//    do góry ok. 74 px (2,3 tila), w poziomie ok. 110-156 px (zależnie od różnicy wysokości
-//    i szerokości hitboxa gracza), z dashem do ok. 260 px. Bezpiecznie: różnica wysokości
-//    do 48 px (1,5 tila) i odstęp do 64-80 px.
-//    Odstęp ok. 208 px na tej samej wysokości jest możliwy TYLKO z dashem.
-//    Nad platformą wiszącą nad podłogą zostaw co najmniej 56 px, żeby gracz mógł pod nią przejść
-//    (albo dociągnij platformę do podłogi jak blok).
-//
-//  WALL-JUMP (Spacja przy ścianie w powietrzu)
-//    Ścianą jest każda platforma sięgająca przy graczu co najmniej 36 px (platformy grube na
-//    1 tile to nie ściany). Odbicie od ściany z tej samej strony co poprzednie ma cooldown
-//    (SAME_WALL_COOLDOWN w game.js), a od ściany z przeciwnej strony nie ma. Dlatego po jednej
-//    ścianie nie da się wspinać, a w szybie (dwie ściany naprzeciw siebie) tak.
-//    Szyb szeroki na 3 tile (96 px, odstęp między ścianami) jest wygodny.
-//
-//  PRZELICZANIE PO ZMIANIE TILE: fizyka i rozmiary w game.js skalują się same (SCALE w config.js),
-//  ale współrzędne w tym pliku są w pikselach, więc trzeba je pomnożyć przez nowy TILE / stary TILE.
+//  FORMAT PLIKU (wszystkie współrzędne w pikselach gry, 1 tile = 32 px, patrz levels.js):
+//    name, subtitle, questionCategory ("easy" | "medium" | "hard"), background (lista tekstur tła),
+//    timeLimit (s), width, height, hp (opcjonalnie), spawn { x, y }   (x = środek, y = pod stopami)
+//    platforms  [{ x, y, w, h, texture, textureMode?, solid?, oneWay?, grappleable? }]
+//    bombs      [{ x, y }]                                              (x = środek, y = podłoże)
+//    enemies    [{ type: "weak" | "strong", x, y, direction?, speed?, area?: { x1, y1, x2, y2 } }]
+//    spikes     [{ x, y, w, h }]                                        (prostokąt, patrz spike())
+//    jumpPads   [{ x, y, w, h, power? }]                                (prostokąt, patrz jumpPad())
+//  texture to nazwa z textures.js ("platform", "ground", "wall") albo ścieżka do obrazka z folderu
+//  assets, np. "assets/budynek.png"; textureMode ("stretch" | "tile" | "cover") mówi, jak go rysować.
 // ============================================================================
 
-import { TILE, VIEW_HEIGHT } from "./config.js";
+import { VIEW_HEIGHT } from "./config.js";
+import { platform } from "./levels.js";
+import { TEXTURES, textureKey } from "./textures.js";
 
-export { TILE };
+const MANIFEST_URL = new URL("../data/levels/index.json", import.meta.url);
+const LEVELS_DIR = new URL("../data/levels/", import.meta.url);
+const DRAFTS_KEY = "masywny.editor.drafts";
+const AUTOSAVE_KEY = "masywny.editor.autosave";
 
-// Platforma: pełny prostokąt (x, y = lewy górny róg). Domyślna grubość to 1 tile.
-// texture to nazwa z textures.js, color to kolor zastępczy bez tekstury.
-export function platform(x, y, w, h = TILE, textureOrOptions = "platform", extraOptions = {}) {
-    const options = typeof textureOrOptions === "object" && textureOrOptions !== null
-        ? textureOrOptions
-        : extraOptions;
-    const texture = typeof textureOrOptions === "string"
-        ? textureOrOptions
-        : (options.texture ?? "platform");
+export const QUESTION_CATEGORIES = ["easy", "medium", "hard"];
 
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
+
+// Pusty poziom dla edytora: podłoga i miejsce startu.
+export function newLevel() {
     return {
-        x, y, w, h, texture,
-        color: options.color ?? "#24343d",
-        solid: options.solid ?? true,
-        oneWay: options.oneWay ?? false,
-        grappleable: options.grappleable ?? false,
+        name: "Nowy poziom",
+        subtitle: "",
+        questionCategory: "easy",
+        background: ["background"],
+        timeLimit: 60,
+        width: 1280,
+        height: VIEW_HEIGHT,
+        spawn: { x: 64, y: 320 },
+        platforms: [{ x: 0, y: 320, w: 1280, h: 40, texture: "ground" }],
+        bombs: [],
+        enemies: [],
+        spikes: [],
+        jumpPads: [],
     };
 }
 
-// Podłoga na całą szerokość poziomu, na samym dole. Ma grubość 1,25 tila, więc jej górna krawędź
-// jest 40 px nad dołem poziomu (dla ekranu 360 px: y = 320 = 10 tili). Dla wyższego poziomu
-// podaj jego wysokość.
-const GROUND_HEIGHT = TILE * 1.25;
-export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHeight - GROUND_HEIGHT, width, GROUND_HEIGHT, "ground");
+// Czyści poziom do postaci zapisywanej w pliku (bez pól tymczasowych i wartości domyślnych).
+export function serializeLevel(level) {
+    const out = {
+        name: level.name,
+        subtitle: level.subtitle ?? "",
+        questionCategory: level.questionCategory,
+        background: [...(level.background ?? ["background"])],
+        timeLimit: level.timeLimit,
+        width: level.width,
+        height: level.height ?? VIEW_HEIGHT,
+    };
+    if (isNumber(level.hp)) out.hp = level.hp;
+    if (level.thumbnail) out.thumbnail = level.thumbnail;
+    out.spawn = { x: level.spawn.x, y: level.spawn.y };
 
-// Kolce: 1 tile szerokości i 1/4 tila wysokości (32 x 8 px) na każdą sztukę. x = lewa krawędź,
-// y = powierzchnia, na której kolce stoją (np. górna krawędź platformy). count = ile kolców obok
-// siebie (każdy 1 tile szerokości). Dotknięcie kolca zabiera graczowi 1 HP i cofa go do checkpointu.
-export const spike = (x, y, count = 1) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4 });
+    out.platforms = (level.platforms ?? []).map((p) => {
+        const item = { x: p.x, y: p.y, w: p.w, h: p.h, texture: p.textureSource ?? p.texture ?? "platform" };
+        if (p.textureMode && p.textureMode !== "stretch") item.textureMode = p.textureMode;
+        if (p.color && p.color !== "#24343d") item.color = p.color;
+        if (p.solid === false) item.solid = false;
+        if (p.oneWay) item.oneWay = true;
+        if (p.grappleable) item.grappleable = true;
+        return item;
+    });
+    out.bombs = (level.bombs ?? []).map((b) => ({ x: b.x, y: b.y }));
+    out.enemies = (level.enemies ?? []).map((e) => {
+        const item = { type: e.type, x: e.x, y: e.y };
+        if (e.id) item.id = e.id;
+        if (e.direction === -1) item.direction = -1;
+        if (isNumber(e.speed)) item.speed = e.speed;
+        if (isNumber(e.chaseSpeed)) item.chaseSpeed = e.chaseSpeed;
+        if (e.area) item.area = { x1: e.area.x1, y1: e.area.y1, x2: e.area.x2, y2: e.area.y2 };
+        if (e.vision) item.vision = { ...e.vision };
+        return item;
+    });
+    out.spikes = (level.spikes ?? []).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h }));
+    out.jumpPads = (level.jumpPads ?? []).map((j) => {
+        const item = { x: j.x, y: j.y, w: j.w, h: j.h };
+        if (isNumber(j.power) && j.power !== 1) item.power = j.power;
+        return item;
+    });
+    return out;
+}
 
-// Skocznia (jump pad): 1 tile szerokości i 1/4 tila wysokości (32 x 8 px) na każdą sztukę. x = lewa
-// krawędź, y = powierzchnia, na której skocznia stoi (np. górna krawędź platformy). count = ile
-// skoczni obok siebie. Wejście na nią wyrzuca gracza w górę na ok. 5,3 tila (JUMP_PAD_SPEED w game.js);
-// opcja power mnoży prędkość odbicia (np. 1.2 = wyżej, 0.7 = niżej; wysokość rośnie z kwadratem power).
-export const jumpPad = (x, y, count = 1, options = {}) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4, power: options.power ?? 1 });
+// Zamienia poziom z JSON na obiekt dla gry (tak jak poziomy z levels.js). Rzuca błąd z opisem
+// problemu, gdy plik jest uszkodzony.
+export function normalizeLevel(raw) {
+    if (!raw || typeof raw !== "object") throw new Error("poziom nie jest obiektem");
+    const need = (condition, message) => { if (!condition) throw new Error(message); };
 
-// Przeciwnik: x = środek, y = powierzchnia pod stopami. Opcje (wszystkie opcjonalne):
-//   id, direction (1 / -1), speed (patrol, px/s), chaseSpeed (pościg),
-//   area { x1, y1, x2, y2 }  dwa rogi prostokąta, w którym może się poruszać (domyślnie: jego platforma),
-//   vision { angle, length, offsetX, offsetY, alpha }  nadpisuje pole widzenia z enemies.js.
-export const enemy = (type, x, y, options = {}) => ({ type, x, y, ...options });
+    need(typeof raw.name === "string" && raw.name.trim() !== "", "brak pola name");
+    need(QUESTION_CATEGORIES.includes(raw.questionCategory ?? "easy"), "questionCategory musi być easy, medium albo hard");
+    need(isNumber(raw.timeLimit ?? 60) && (raw.timeLimit ?? 60) > 0, "timeLimit musi być liczbą większą od 0");
+    need(isNumber(raw.width) && raw.width > 0, "width musi być liczbą większą od 0");
+    need(isNumber(raw.spawn?.x) && isNumber(raw.spawn?.y), "spawn musi mieć x i y");
 
-// Bomba: x = środek, y = powierzchnia, na której stoi. Opcjonalny hitbox: { hitbox: { w, h } }.
-export const bomb = (x, y, options = {}) => ({ x, y, ...options });
+    const list = (key) => {
+        const value = raw[key] ?? [];
+        need(Array.isArray(value), `${key} musi być listą`);
+        return value;
+    };
+    const rect = (item, where) => need(
+        [item.x, item.y, item.w, item.h].every(isNumber) && item.w > 0 && item.h > 0,
+        `${where}: x, y, w, h muszą być liczbami (w i h > 0)`,
+    );
 
-export const LEVELS = [
-    {
-        name: "Poziom 1",
-        subtitle: "Rozgrzewka",
-        questionCategory: "easy",
-        thumbnail: "level1Thumbnail",
-        background: ["background"],
-        timeLimit: 60,
-        width: 1600, // 50 tili
-        spawn: { x: 64, y: 320 },
-        platforms: [
-            ground(1600),
-            platform(64, 256, 96, 12, { oneWay: true, color: "#5c8790" }),
-            platform(304, -3, 24, 24, { solid: false, grappleable: true, color: "#d1a94f" }),
-            platform(200, 0, 24, 24, { solid: false, grappleable: true, color: "#d1a94f" }),
-            platform(192, 272, 96, 48),   // blok do podłogi
-            platform(352, 224, 96),
-            platform(512, 176, 96),
-            platform(672, 224, 96),
-            platform(784, 288, 32, 32),  // mały blok na podłodze
-            platform(832, 208, 128),
-            platform(1000, 160, 96),
-            platform(1168, 208, 96),
-            platform(1328, 272, 128, 48),  // blok do podłogi
-        ],
-        bombs: [
-            bomb(560, 176),
-            bomb(1048, 160),
-            bomb(1392, 272),
-        ],
-        spikes: [
-            spike(576, 320, 2),   // podłoga pod platformami przed drugą bombą
-            spike(1264, 320, 2),  // podłoga przed ostatnim blokiem
-        ],
-        jumpPads: [
-            jumpPad(464, 320),    // na podłodze obok pierwszej wieży: wyrzuca na platformę z bomką (y = 176)
-        ],
-        enemies: [
-            // Domyślnie przeciwnik patroluje całą platformę, na której stoi. Prostokąt `area` (dwa rogi)
-            // pozwala mu w pościgu zejść z niej na podłogę (y2 = 320 to górna krawędź podłogi).
-            enemy("weak", 400, 224, { id: "weak-1", speed: 48, area: { x1: 320, y1: 100, x2: 520, y2: 320 } }),
-            enemy("strong", 896, 208, { id: "strong-1", speed: 36 }),
-        ],
-    },
-    {
-        name: "Poziom 2",
-        subtitle: "Wieże",
-        questionCategory: "medium",
-        thumbnail: "level2Thumbnail",
-        background: ["background2"],
-        timeLimit: 70,
-        width: 1856, // 58 tili
-        spawn: { x: 64, y: 320 },
-        platforms: [
-            ground(1856),
-            // pierwsza wieża schodów
-            platform(176, 272, 80, 48),   // blok do podłogi
-            platform(280, 224, 80),
-            platform(384, 176, 80),
-            platform(488, 128, 96),
-            // zejście
-            platform(656, 192, 80),
-            platform(784, 224, 96),
-            platform(928, 256, 32, 64),  // słupek do podłogi
-            // druga wieża
-            platform(1008, 224, 80),
-            platform(1136, 192, 80),
-            platform(1264, 144, 80),
-            // koniec poziomu
-            platform(1432, 272, 96, 48),  // blok do podłogi
-            platform(1600, 224, 112),
-        ],
-        bombs: [
-            bomb(536, 128),
-            bomb(1304, 144),
-            bomb(1480, 272),
-            bomb(1656, 224),
-        ],
-        spikes: [
-            spike(600, 320, 2),   // podłoga między wieżami
-            spike(1360, 320, 1),
-        ],
-    },
-    {
-        name: "Poziom 3",
-        subtitle: "Długa droga",
-        questionCategory: "medium",
-        thumbnail: "level3Thumbnail",
-        background: ["background3"],
-        timeLimit: 75,
-        width: 2400, // 75 tili
-        spawn: { x: 64, y: 320 },
-        platforms: [
-            ground(2400),
-            // pierwszy podjazd
-            platform(200, 272, 64, 48),  // blok do podłogi
-            platform(320, 224, 64),
-            platform(440, 176, 64),
-            platform(576, 128, 80),
-            // zejście
-            platform(752, 192, 64),
-            platform(896, 224, 64),
-            // schody z bloków na podłodze
-            platform(1136, 288, 32, 32),
-            platform(1192, 240, 32, 80),
-            // drugi podjazd
-            platform(1336, 272, 96, 48),  // blok do podłogi
-            platform(1496, 224, 64),
-            platform(1624, 176, 64),
-            platform(1760, 128, 80),
-            // zejście do mety
-            platform(1936, 192, 64),
-            platform(2080, 224, 64),
-            platform(2224, 208, 112),
-        ],
-        bombs: [
-            bomb(616, 128),
-            bomb(1208, 240),
-            bomb(1800, 128),
-            bomb(2280, 208),
-        ],
-        spikes: [
-            spike(960, 320, 3),   // podłoga między zejściem a schodami z bloków
-            spike(1840, 320, 2),
-        ],
-    },
-    {
-        name: "Poziom 4",
-        subtitle: "Szyb i dash",
-        questionCategory: "hard",
-        thumbnail: "level4Thumbnail",
-        background: ["background4"],
-        timeLimit: 120,
-        width: 1472,   // 46 tili
-        height: 1000,  // wyższy niż ekran: kamera podąża za graczem w pionie
-        spawn: { x: 64, y: 960 },
-        platforms: [
-            ground(1472, 1000),
-            // bomba na rozgrzewkę, zwykły skok
-            platform(256, 912, 96, 48),  // blok do podłogi
-            // SZYB: dwie ściany naprzeciw siebie (odstęp 96 = 3 tile), wspinaczka odbijaniem się od nich.
-            // Lewa ściana kończy się 64 px (2 tile) nad podłogą: pod nią wchodzi się do szybu.
-            platform(512, 384, 32, 512, "wall"),
-            platform(640, 384, 32, 576, "wall"),
-            // półka na szczycie szybu
-            platform(672, 384, 176),
-            // SKOK Z DASHEM: odstęp 208 px (bez dasha da się maks. ok. 156, z dashem ok. 260)
-            platform(1056, 384, 128),
-            // koniec poziomu: zwykły skok w górę
-            platform(1248, 336, 128),
-        ],
-        bombs: [
-            bomb(304, 912),
-            bomb(752, 384),
-            bomb(1120, 384),
-            bomb(1312, 336),
-        ],
-        spikes: [
-            spike(384, 960, 2),   // podłoga między blokiem a wejściem do szybu
-        ],
-    },
-];
+    const platforms = list("platforms").map((p, i) => {
+        rect(p, `platforms[${i}]`);
+        const item = platform(p.x, p.y, p.w, p.h, textureKey(p.texture ?? "platform", p.textureMode), {
+            color: p.color,
+            solid: p.solid,
+            oneWay: p.oneWay,
+            grappleable: p.grappleable,
+        });
+        // Obrazek z pliku: pamiętamy oryginalną ścieżkę (item.texture to wewnętrzny klucz), żeby edytor
+        // mógł poziom z powrotem zapisać do JSON.
+        if (p.texture && !TEXTURES[p.texture]) {
+            item.textureSource = p.texture;
+            item.textureMode = p.textureMode ?? "stretch";
+        }
+        return item;
+    });
+    const spikes = list("spikes").map((s, i) => {
+        rect(s, `spikes[${i}]`);
+        return { x: s.x, y: s.y, w: s.w, h: s.h };
+    });
+    const jumpPads = list("jumpPads").map((j, i) => {
+        rect(j, `jumpPads[${i}]`);
+        return { x: j.x, y: j.y, w: j.w, h: j.h, power: j.power ?? 1 };
+    });
+    const bombs = list("bombs").map((b, i) => {
+        need(isNumber(b.x) && isNumber(b.y), `bombs[${i}]: x i y muszą być liczbami`);
+        return { ...b };
+    });
+    const enemies = list("enemies").map((e, i) => {
+        need(e.type === "weak" || e.type === "strong", `enemies[${i}]: type musi być weak albo strong`);
+        need(isNumber(e.x) && isNumber(e.y), `enemies[${i}]: x i y muszą być liczbami`);
+        return { ...e };
+    });
+
+    const level = {
+        ...raw,
+        name: raw.name,
+        subtitle: raw.subtitle ?? "",
+        questionCategory: raw.questionCategory ?? "easy",
+        background: raw.background ?? ["background"],
+        timeLimit: raw.timeLimit ?? 60,
+        width: raw.width,
+        height: raw.height ?? VIEW_HEIGHT,
+        spawn: { x: raw.spawn.x, y: raw.spawn.y },
+        platforms,
+        bombs,
+        enemies,
+        spikes,
+        jumpPads,
+    };
+    if (!isNumber(level.hp)) delete level.hp;
+    return level;
+}
+
+const naturalCompare = (a, b) => a.localeCompare(b, "pl", { numeric: true, sensitivity: "base" });
+
+// Nazwy plików *.json z listingu katalogu (strona HTML z linkami, którą daje m.in. python -m http.server).
+// Gdy serwer listingu nie ma, zwraca pustą listę.
+async function listDirectory() {
+    try {
+        const response = await fetch(LEVELS_DIR, { cache: "no-cache" });
+        if (!response.ok) return [];
+        if (!(response.headers.get("content-type") ?? "").includes("text/html")) return [];
+        const html = await response.text();
+        const names = [];
+        for (const match of html.matchAll(/href\s*=\s*["']([^"'#?]+)["']/gi)) {
+            let name;
+            try { name = decodeURIComponent(match[1]); } catch { continue; }
+            name = name.split("/").pop();
+            if (name.toLowerCase().endsWith(".json") && name.toLowerCase() !== "index.json") names.push(name);
+        }
+        return names;
+    } catch {
+        return [];
+    }
+}
+
+// Lista z index.json (opcjonalna). Brak pliku to nie błąd.
+async function readManifest() {
+    try {
+        const response = await fetch(MANIFEST_URL, { cache: "no-cache" });
+        if (!response.ok) return null;
+        const list = (await response.json()).levels;
+        if (!Array.isArray(list)) throw new Error('pole "levels" musi być listą nazw plików');
+        return list.filter((name) => typeof name === "string" && name !== "index.json");
+    } catch (error) {
+        console.warn(`Nie można odczytać src/data/levels/index.json: ${error.message}`);
+        return null;
+    }
+}
+
+// Wczytuje wszystkie poziomy JSON z src/data/levels/ (patrz opis na górze pliku).
+export async function loadJsonLevels() {
+    const [manifest, listed] = await Promise.all([readManifest(), listDirectory()]);
+
+    if (!manifest && listed.length === 0) {
+        console.info("Brak poziomów JSON: serwer nie pokazuje listingu src/data/levels/ i nie ma index.json " +
+            "(wygeneruj go: python tools/make_levels_index.py).");
+        return [];
+    }
+
+    // Najpierw pliki z index.json (w jego kolejności), potem reszta z listingu po nazwie.
+    const names = [...new Set(manifest ?? [])];
+    const rest = listed.filter((name) => !names.includes(name)).sort(naturalCompare);
+    names.push(...new Set(rest));
+
+    const levels = [];
+    for (const file of names) {
+        try {
+            const response = await fetch(new URL(encodeURIComponent(file), LEVELS_DIR), { cache: "no-cache" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const level = normalizeLevel(await response.json());
+            level.source = file;
+            levels.push(level);
+        } catch (error) {
+            console.warn(`Poziom ${file} pominięty: ${error.message}`);
+        }
+    }
+    return levels;
+}
+
+// Dokłada poziomy JSON do listy poziomów gry: poziom o tej samej nazwie co istniejący go zastępuje
+// (w tym samym miejscu), pozostałe trafiają na koniec. Modyfikuje `target` (zwykle LEVELS).
+export function mergeJsonLevels(target, jsonLevels) {
+    for (const level of jsonLevels) {
+        const index = target.findIndex((existing) => existing.name === level.name);
+        if (index === -1) {
+            target.push(level);
+        } else {
+            console.info(`Poziom "${level.name}" z ${level.source} zastępuje poziom o tej samej nazwie z levels.js.`);
+            target[index] = level;
+        }
+    }
+    return target;
+}
+
+// ---------- Szkice w przeglądarce (localStorage) ----------
+
+function readJson(key, fallback) {
+    try {
+        const text = localStorage.getItem(key);
+        return text ? JSON.parse(text) : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function writeJson(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch {
+        return false; // zablokowany localStorage (np. tryb prywatny)
+    }
+}
+
+export const listDrafts = () => Object.keys(readJson(DRAFTS_KEY, {}));
+export const loadDraft = (name) => readJson(DRAFTS_KEY, {})[name] ?? null;
+
+export function saveDraft(level) {
+    const drafts = readJson(DRAFTS_KEY, {});
+    drafts[level.name] = serializeLevel(level);
+    return writeJson(DRAFTS_KEY, drafts);
+}
+
+export function deleteDraft(name) {
+    const drafts = readJson(DRAFTS_KEY, {});
+    delete drafts[name];
+    return writeJson(DRAFTS_KEY, drafts);
+}
+
+// Automatyczny zapis ostatnio edytowanego poziomu (żeby odświeżenie strony niczego nie traciło).
+export const saveAutosave = (level) => writeJson(AUTOSAVE_KEY, serializeLevel(level));
+export const loadAutosave = () => readJson(AUTOSAVE_KEY, null);

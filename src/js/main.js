@@ -6,10 +6,11 @@ import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
 import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
 import { createEditor } from "./editor.js";
-import { loadJsonLevels, normalizeLevel } from "./levelstore.js";
+import { loadJsonLevels, mergeJsonLevels, normalizeLevel } from "./levelstore.js";
 
-// Poziomy z plików JSON (src/data/levels/index.json) dochodzą po poziomach z levels.js.
-LEVELS.push(...await loadJsonLevels());
+// Poziomy z plików JSON (wszystkie *.json z src/data/levels/) dochodzą po poziomach z levels.js;
+// poziom JSON o tej samej nazwie co poziom z kodu zastępuje go.
+mergeJsonLevels(LEVELS, await loadJsonLevels());
 const baseLevelCount = LEVELS.length; // poziom testowany z edytora dostaje miejsce za nimi
 
 let questionQueues;

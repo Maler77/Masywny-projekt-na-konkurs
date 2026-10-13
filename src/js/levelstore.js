@@ -1,13 +1,24 @@
 // ============================================================================
 //  POZIOMY W PLIKACH JSON
 //  Poza poziomami zapisanymi w kodzie (levels.js) gra wczytuje poziomy z plików JSON w katalogu
-//  src/data/levels/. Lista plików jest w src/data/levels/index.json:
+//  src/data/levels/. Wystarczy wrzucić tam plik *.json (np. pobrany z edytora: menu główne ->
+//  "Edytor poziomów" -> "Pobierz JSON") i odświeżyć stronę: poziom sam pojawi się w menu.
 //
-//      { "levels": ["poziom-5.json", "inny-poziom.json"] }
+//  JAK GRA ZNAJDUJE PLIKI
+//    1. Przeglądarka nie umie wylistować katalogu, ale lokalny serwer (python -m http.server) wystawia
+//       jego listing jako stronę HTML, więc gra czyta z niej nazwy plików *.json. Dzięki temu nie trzeba
+//       nic dopisywać.
+//    2. Hosting bez listingu katalogu (np. GitHub Pages) takiej strony nie ma. Wtedy gra korzysta z
+//       src/data/levels/index.json, czyli listy plików:   { "levels": ["poziom-1.json", "inny.json"] }
+//       Wygenerujesz ją jednym poleceniem:  python src/data/levels/level-index-generator.py
+//       (index.json jest też zawsze brany pod uwagę lokalnie: pliki z niego idą w menu pierwsze,
+//       w podanej kolejności, a pozostałe po nich, sortowane po nazwie pliku).
 //
-//  Plik poziomu tworzy edytor (menu główne -> "Edytor poziomów" -> "Pobierz JSON"). Wrzuć go do
-//  src/data/levels/ i dopisz jego nazwę do index.json, a poziom pojawi się w menu po karcie ostatniego
-//  poziomu z kodu.
+//  KOLEJNOŚĆ I DUPLIKATY
+//    Poziomy z levels.js są pierwsze. Poziom JSON o TEJ SAMEJ NAZWIE (pole "name") co poziom z kodu
+//    zastępuje go w tym samym miejscu menu, więc po przeniesieniu poziomu z kodu do JSON nie ma
+//    duplikatu. Pozostałe poziomy JSON dochodzą na końcu. Uszkodzony plik jest pomijany z ostrzeżeniem
+//    w konsoli przeglądarki (F12), reszta poziomów działa dalej.
 //
 //  FORMAT PLIKU (wszystkie współrzędne w pikselach gry, 1 tile = 32 px, patrz levels.js):
 //    name, subtitle, questionCategory ("easy" | "medium" | "hard"), background (lista tekstur tła),
@@ -173,23 +184,62 @@ export function normalizeLevel(raw) {
     return level;
 }
 
-// Wczytuje poziomy wymienione w src/data/levels/index.json. Uszkodzony plik jest pomijany
-// (ostrzeżenie w konsoli), a brak index.json oznacza po prostu brak poziomów JSON.
-export async function loadJsonLevels() {
-    let names;
+const naturalCompare = (a, b) => a.localeCompare(b, "pl", { numeric: true, sensitivity: "base" });
+
+// Nazwy plików *.json z listingu katalogu (strona HTML z linkami, którą daje m.in. python -m http.server).
+// Gdy serwer listingu nie ma, zwraca pustą listę.
+async function listDirectory() {
     try {
-        const response = await fetch(MANIFEST_URL);
+        const response = await fetch(LEVELS_DIR, { cache: "no-cache" });
         if (!response.ok) return [];
-        names = (await response.json()).levels ?? [];
-    } catch (error) {
-        console.warn("Nie można wczytać listy poziomów JSON (index.json):", error);
+        if (!(response.headers.get("content-type") ?? "").includes("text/html")) return [];
+        const html = await response.text();
+        const names = [];
+        for (const match of html.matchAll(/href\s*=\s*["']([^"'#?]+)["']/gi)) {
+            let name;
+            try { name = decodeURIComponent(match[1]); } catch { continue; }
+            name = name.split("/").pop();
+            if (name.toLowerCase().endsWith(".json") && name.toLowerCase() !== "index.json") names.push(name);
+        }
+        return names;
+    } catch {
         return [];
     }
+}
+
+// Lista z index.json (opcjonalna). Brak pliku to nie błąd.
+async function readManifest() {
+    try {
+        const response = await fetch(MANIFEST_URL, { cache: "no-cache" });
+        if (!response.ok) return null;
+        const list = (await response.json()).levels;
+        if (!Array.isArray(list)) throw new Error('pole "levels" musi być listą nazw plików');
+        return list.filter((name) => typeof name === "string" && name !== "index.json");
+    } catch (error) {
+        console.warn(`Nie można odczytać src/data/levels/index.json: ${error.message}`);
+        return null;
+    }
+}
+
+// Wczytuje wszystkie poziomy JSON z src/data/levels/ (patrz opis na górze pliku).
+export async function loadJsonLevels() {
+    const [manifest, listed] = await Promise.all([readManifest(), listDirectory()]);
+
+    if (!manifest && listed.length === 0) {
+        console.info("Brak poziomów JSON: serwer nie pokazuje listingu src/data/levels/ i nie ma index.json " +
+            "(wygeneruj go: python src/data/levels/level-index-generator.py).");
+        return [];
+    }
+
+    // Najpierw pliki z index.json (w jego kolejności), potem reszta z listingu po nazwie.
+    const names = [...new Set(manifest ?? [])];
+    const rest = listed.filter((name) => !names.includes(name)).sort(naturalCompare);
+    names.push(...new Set(rest));
 
     const levels = [];
     for (const file of names) {
         try {
-            const response = await fetch(new URL(file, LEVELS_DIR));
+            const response = await fetch(new URL(encodeURIComponent(file), LEVELS_DIR), { cache: "no-cache" });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const level = normalizeLevel(await response.json());
             level.source = file;
@@ -199,6 +249,21 @@ export async function loadJsonLevels() {
         }
     }
     return levels;
+}
+
+// Dokłada poziomy JSON do listy poziomów gry: poziom o tej samej nazwie co istniejący go zastępuje
+// (w tym samym miejscu), pozostałe trafiają na koniec. Modyfikuje `target` (zwykle LEVELS).
+export function mergeJsonLevels(target, jsonLevels) {
+    for (const level of jsonLevels) {
+        const index = target.findIndex((existing) => existing.name === level.name);
+        if (index === -1) {
+            target.push(level);
+        } else {
+            console.info(`Poziom "${level.name}" z ${level.source} zastępuje poziom o tej samej nazwie z levels.js.`);
+            target[index] = level;
+        }
+    }
+    return target;
 }
 
 // ---------- Szkice w przeglądarce (localStorage) ----------

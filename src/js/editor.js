@@ -1,6 +1,6 @@
 // ============================================================================
 //  EDYTOR POZIOMÓW
-//  Otwierany z menu głównego. Edytuje poziom w formacie JSON (patrz levelStore.js), który gra
+//  Otwierany z menu głównego. Edytuje poziom w formacie JSON (patrz levelstore.js), który gra
 //  wczytuje z src/data/levels/. Cały interfejs (panel po lewej) tworzy ten plik, a mapę rysuje na
 //  tym samym canvasie co gra.
 //
@@ -20,7 +20,7 @@ import { ENEMY_TYPES } from "./enemies.js";
 import {
     QUESTION_CATEGORIES, listDrafts, loadAutosave, loadDraft, newLevel, normalizeLevel,
     saveAutosave, saveDraft, serializeLevel,
-} from "./levelStore.js";
+} from "./levelstore.js";
 
 const BOMB_SIZE = TILE;                    // bomba: 1 x 1 tile
 const SPAWN_SIZE = { w: 24, h: 44 };       // hitbox gracza (PLAYER_HITBOX w game.js)
@@ -621,7 +621,7 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
             ),
             el("div", { class: "editor__row" },
                 button("Zapisz szkic", saveDraftNow, { title: "Ctrl+S. Szkic zostaje w tej przeglądarce" }),
-                button("Pobierz JSON", downloadJson, { title: "Plik wrzuć do src/data/levels/ i dopisz do index.json" }),
+                button("Pobierz JSON", downloadJson, { title: "Plik wrzuć do src/data/levels/, a poziom sam pojawi się w menu" }),
             ),
         );
     }
@@ -887,7 +887,7 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         dirty = false;
-        say(`Pobrano ${slug(model.name)}.json. Wrzuć go do src/data/levels/ i dopisz do index.json.`);
+        say(`Pobrano ${slug(model.name)}.json. Wrzuć go do src/data/levels/ i odśwież stronę, a poziom pojawi się w menu.`);
     }
 
     function saveDraftNow() {
