@@ -5,6 +5,13 @@ import { createMenu } from "./menu.js";
 import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
 import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
+import { createEditor } from "./editor.js";
+import { loadJsonLevels, mergeJsonLevels, normalizeLevel } from "./levelstore.js";
+
+// Poziomy z plików JSON (wszystkie *.json z src/data/levels/) dochodzą po poziomach z levels.js;
+// poziom JSON o tej samej nazwie co poziom z kodu zastępuje go.
+mergeJsonLevels(LEVELS, await loadJsonLevels());
+const baseLevelCount = LEVELS.length; // poziom testowany z edytora dostaje miejsce za nimi
 
 let questionQueues;
 try {
@@ -90,12 +97,19 @@ applyDomTextures();
 // Elementy okna z pytaniem oraz ekranów końcowych.
 const bombTitle = document.querySelector("#bomb-title");
 const bombTimer = document.querySelector("#bomb-timer");
+const bombPenalty = document.querySelector("#bomb-penalty");
 const bombOptions = [...document.querySelectorAll(".bomb-panel__option")];
 const loseReason = document.querySelector("#lose-reason");
 const winSummary = document.querySelector("#win-summary");
 const winTime = document.querySelector("#win-time");
 const winNext = document.querySelector("#win-next");
 const LETTERS = ["A", "B", "C"];
+
+// Zła odpowiedź przy bombie zabiera tyle sekund z timera poziomu (a nie kończy gry). Zła odpowiedź
+// zostaje wyłączona, więc pytanie można dokończyć, ale każde pudło kosztuje. Gdy czas spadnie do zera,
+// poziom kończy się jak zwykle ("Czas minął").
+const WRONG_ANSWER_PENALTY = 20;
+const wrongAnswers = new Map(); // klucz bomby -> zbiór indeksów odpowiedzi, które już były złe
 
 // ---------- Stan gry ----------
 // "menu"    - menu główne, widoczne po otwarciu strony
@@ -130,6 +144,7 @@ const menu = createMenu({
     resume: resumeGame,
     quit: quitToMenu,
     answer: (data) => answerBomb(Number(data.index)),
+    editor: () => openEditor(),                          // "Edytor poziomów" w menu głównym
 });
 
 function setState(next) {
@@ -146,6 +161,60 @@ function setState(next) {
     else menu.show(SCREEN_FOR_STATE[next]);
 }
 
+// ---------- Edytor poziomów (editor.js) ----------
+// Z edytora można przetestować poziom: gra uruchamia go jako ostatni na liście LEVELS, a przyciski
+// "Menu główne" / "Powrót do menu" wracają wtedy do edytora zamiast do menu.
+let testingFromEditor = false;
+
+const editor = createEditor({
+    canvas,
+    container: canvas.closest(".game") ?? document.body,
+    builtinLevels: LEVELS.slice(),
+    onTest: startEditorTest,
+    onExit: closeEditor,
+});
+
+function openEditor() {
+    setState("editor");
+    editor.open();
+}
+
+function closeEditor() {
+    editor.close();
+    setState("menu");
+}
+
+function setQuitLabels() {
+    for (const button of document.querySelectorAll('[data-action="quit"]')) {
+        button.dataset.label ??= button.textContent;
+        button.textContent = testingFromEditor ? "Wróć do edytora" : button.dataset.label;
+    }
+}
+
+function startEditorTest(rawLevel) {
+    let level;
+    try {
+        level = normalizeLevel(rawLevel);
+    } catch (error) {
+        window.alert(`Poziom ma błąd: ${error.message}`);
+        return;
+    }
+    LEVELS.length = baseLevelCount;
+    LEVELS.push(level);
+    testingFromEditor = true;
+    setQuitLabels();
+    editor.close();
+    startGame(baseLevelCount);
+}
+
+function endEditorTest() {
+    testingFromEditor = false;
+    LEVELS.length = baseLevelCount;
+    setQuitLabels();
+    setState("editor");
+    editor.resume();
+}
+
 // Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
 function startGame(levelIndex = currentLevel) {
     if (!LEVELS[levelIndex]) return;
@@ -153,9 +222,10 @@ function startGame(levelIndex = currentLevel) {
     game.loadLevel(LEVELS[levelIndex]);
     activeBomb = null;
     activeQuestion = null;
+    wrongAnswers.clear();
     pausedFromState = "playing";
     setState("playing");
-    enterFullscreen();
+    if (!testingFromEditor) enterFullscreen();
 }
 
 // Fullscreen is requested from the user's Play click. Keyboard Lock lets Escape
@@ -211,6 +281,10 @@ function quitToMenu() {
     game.reset();
     activeBomb = null;
     activeQuestion = null;
+    if (testingFromEditor) {
+        endEditorTest();
+        return;
+    }
     exitFullscreen();
     setState("menu");
 }
@@ -247,25 +321,39 @@ function openBomb(bomb) {
     activeBomb = bomb;
     activeQuestion = question;
     bombTitle.textContent = question.question;
+    const wrong = wrongAnswers.get(bombKey) ?? new Set();
     bombOptions.forEach((button, index) => {
         button.hidden = false;
+        button.disabled = wrong.has(index); // wcześniej wybrana zła odpowiedź zostaje wyłączona
         button.textContent = `${LETTERS[index]}. ${question.answers[index]}`;
     });
+    bombPenalty.hidden = wrong.size === 0;
+    if (wrong.size > 0) bombPenalty.textContent = `Zła odpowiedź! −${WRONG_ANSWER_PENALTY} s (razy ${wrong.size})`;
     setState("bomb");
 }
 
-// Zła odpowiedź = przegrana, dobra = bomba rozbrojona (a po ostatniej wygrana).
+// Zła odpowiedź = kara czasowa; po rozbrojeniu wszystkich bomb trzeba jeszcze dotrzeć do wyjścia po prawej.
 function answerBomb(index) {
     if (state !== "bomb" || !activeBomb || !activeQuestion || !Number.isInteger(index) || index < 0 || index > 2) return;
+    const bombKey = `${currentLevel}:${activeBomb.id}`;
+    if (wrongAnswers.get(bombKey)?.has(index)) return; // ta odpowiedź już była zła
 
     if (index === activeQuestion.correctAnswer) {
         game.defuse(activeBomb);
         activeBomb = null;
         activeQuestion = null;
-        if (game.allDefused()) winGame();
-        else setState("playing");
+        setState("playing");
     } else {
-        loseGame("Zła odpowiedź. Bomba wybuchła!");
+        const wrong = wrongAnswers.get(bombKey) ?? new Set();
+        wrong.add(index);
+        wrongAnswers.set(bombKey, wrong);
+        game.addTimePenalty(WRONG_ANSWER_PENALTY);
+
+        bombOptions[index].disabled = true;
+        bombPenalty.hidden = false;
+        bombPenalty.textContent = `Zła odpowiedź! −${WRONG_ANSWER_PENALTY} s (razy ${wrong.size})`;
+        // Fokus przechodzi na pierwszą dostępną odpowiedź (wyłączony przycisk go traci).
+        bombOptions.find((button) => !button.disabled)?.focus({ preventScroll: true });
     }
 }
 
@@ -335,12 +423,14 @@ function frame(now) {
 
         if (state === "playing") game.resolveEnemyAttack();
 
+        if (state === "playing" && game.allDefused() && game.atRightEdge()) winGame();
+
         // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
         // tylko cofają gracza do checkpointu (patrz game.js).
         if (state === "playing" && game.isDead()) loseGame("Straciłeś całe życie!");
     } else if (state === "bomb") {
         // Postać stoi, ale czas leci dalej.
-        game.tickTimer(dt);
+        if (!game.allDefused()) game.tickTimer(dt);
 
         const answer = input.answerPressed(); // klawisze A, B, C
         if (answer !== -1) answerBomb(answer);
@@ -353,15 +443,22 @@ function frame(now) {
     }
 
     // Koniec czasu = przegrana (także podczas pytania).
-    if ((state === "playing" || state === "bomb") && game.timeLeft <= 0) {
+    if ((state === "playing" || state === "bomb") && !game.allDefused() && game.timeLeft <= 0) {
         loseGame("Czas minął! Bomby wybuchły.");
     }
 
     input.endFrame();
 
-    const ctx = viewport.begin();
-    game.draw(ctx, { debug, fps, hud: state === "playing" });
-    viewport.end();
+    if (state === "editor") {
+        // Edytor rysuje na całym canvasie (bez skali i pasów gry).
+        editor.update(dt);
+        editor.draw(viewport.beginRaw());
+        viewport.endRaw();
+    } else {
+        const ctx = viewport.begin();
+        game.draw(ctx, { debug, fps, hud: state === "playing" });
+        viewport.end();
+    }
 
     requestAnimationFrame(frame);
 }

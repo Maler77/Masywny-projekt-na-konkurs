@@ -54,12 +54,25 @@ export function createViewport(canvas) {
         context.restore();
     }
 
+    // Tryb "surowy" (edytor poziomów): cały canvas bez skali i pasów, współrzędne w pikselach ekranu.
+    function beginRaw() {
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.fillStyle = "#0b1016";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.save();
+        context.imageSmoothingEnabled = false;
+        return context;
+    }
+
     return {
         width: VIEW_WIDTH,
         height: VIEW_HEIGHT,
         get scale() { return scale; },
+        canvas,
         begin,
         end,
+        beginRaw,
+        endRaw: end,
         destroy() {
             observer.disconnect();
         },

@@ -1,0 +1,114 @@
+{
+  "name": "Nowy poziom",
+  "subtitle": "",
+  "questionCategory": "easy",
+  "background": [
+    "background"
+  ],
+  "timeLimit": 60,
+  "width": 1280,
+  "height": 480,
+  "hp": 3,
+  "spawn": {
+    "x": 56,
+    "y": 440
+  },
+  "platforms": [
+    {
+      "x": 0,
+      "y": 440,
+      "w": 1280,
+      "h": 40,
+      "texture": "ground"
+    },
+    {
+      "x": 136,
+      "y": 328,
+      "w": 136,
+      "h": 112,
+      "texture": "platform"
+    },
+    {
+      "x": 208,
+      "y": 216,
+      "w": 64,
+      "h": 112,
+      "texture": "platform"
+    },
+    {
+      "x": 708,
+      "y": 124,
+      "w": 24,
+      "h": 24,
+      "texture": "platform",
+      "color": "#d1a94f",
+      "solid": false,
+      "grappleable": true
+    },
+    {
+      "x": 784,
+      "y": 240,
+      "w": 136,
+      "h": 32,
+      "texture": "platform"
+    }
+  ],
+  "bombs": [
+    {
+      "x": 192,
+      "y": 328
+    },
+    {
+      "x": 896,
+      "y": 240
+    }
+  ],
+  "enemies": [
+    {
+      "type": "weak",
+      "x": 520,
+      "y": 440,
+      "id": "weak-1",
+      "area": {
+        "x1": 376,
+        "y1": 240,
+        "x2": 1280,
+        "y2": 440
+      }
+    },
+    {
+      "type": "strong",
+      "x": 984,
+      "y": 440,
+      "id": "strong-1",
+      "area": {
+        "x1": 376,
+        "y1": 240,
+        "x2": 1288,
+        "y2": 440
+      }
+    }
+  ],
+  "spikes": [
+    {
+      "x": 272,
+      "y": 432,
+      "w": 32,
+      "h": 8
+    },
+    {
+      "x": 304,
+      "y": 432,
+      "w": 64,
+      "h": 8
+    }
+  ],
+  "jumpPads": [
+    {
+      "x": 592,
+      "y": 432,
+      "w": 32,
+      "h": 8
+    }
+  ]
+}

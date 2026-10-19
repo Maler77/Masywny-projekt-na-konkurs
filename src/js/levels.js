@@ -19,6 +19,7 @@
 //    bombs       lista położeń bomb (pytania są w src/data/questions.json)
 //    enemies     opcjonalna lista przeciwników, np. enemy("strong", x, y)
 //    spikes      opcjonalna lista kolców, np. spike(x, y) albo spike(x, y, 3) (patrz niżej)
+//    jumpPads    opcjonalna lista skoczni, np. jumpPad(x, y) albo jumpPad(x, y, 2, { power: 1.2 }) (patrz niżej)
 //    hp          opcjonalnie: życie gracza na tym poziomie (domyślnie PLAYER_MAX_HP w game.js = 3)
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
@@ -74,6 +75,12 @@ export const ground = (width, levelHeight = VIEW_HEIGHT) => platform(0, levelHei
 // siebie (każdy 1 tile szerokości). Dotknięcie kolca zabiera graczowi 1 HP i cofa go do checkpointu.
 export const spike = (x, y, count = 1) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4 });
 
+// Skocznia (jump pad): 1 tile szerokości i 1/4 tila wysokości (32 x 8 px) na każdą sztukę. x = lewa
+// krawędź, y = powierzchnia, na której skocznia stoi (np. górna krawędź platformy). count = ile
+// skoczni obok siebie. Wejście na nią wyrzuca gracza w górę na ok. 5,3 tila (JUMP_PAD_SPEED w game.js);
+// opcja power mnoży prędkość odbicia (np. 1.2 = wyżej, 0.7 = niżej; wysokość rośnie z kwadratem power).
+export const jumpPad = (x, y, count = 1, options = {}) => ({ x, y: y - TILE / 4, w: TILE * count, h: TILE / 4, power: options.power ?? 1 });
+
 // Przeciwnik: x = środek, y = powierzchnia pod stopami. Opcje (wszystkie opcjonalne):
 //   id, direction (1 / -1), speed (patrol, px/s), chaseSpeed (pościg),
 //   area { x1, y1, x2, y2 }  dwa rogi prostokąta, w którym może się poruszać (domyślnie: jego platforma),
@@ -116,6 +123,9 @@ export const LEVELS = [
         spikes: [
             spike(576, 320, 2),   // podłoga pod platformami przed drugą bombą
             spike(1264, 320, 2),  // podłoga przed ostatnim blokiem
+        ],
+        jumpPads: [
+            jumpPad(464, 320),    // na podłodze obok pierwszej wieży: wyrzuca na platformę z bomką (y = 176)
         ],
         enemies: [
             // Domyślnie przeciwnik patroluje całą platformę, na której stoi. Prostokąt `area` (dwa rogi)

@@ -68,6 +68,14 @@ export const TEXTURES = {
     // Wykrzyknik nad przeciwnikiem, który zauważył gracza (rysowany w 6 x 14 px; bez pliku: czerwony wykrzyknik).
     exclamation: { src: null },  // np. "assets/exclamation.png"
 
+    // Skocznia (jump pad): kafelek 1 x 1/4 tila (32 x 8 px), powtarzany na całej szerokości.
+    jumpPad: { src: null, mode: "tile", tileWidth: TILE, tileHeight: TILE / 4 }, // np. "assets/jump_pad.png"
+
+    // Bomba dymna: pocisk (rysowany w 8 x 8 px) i jedna "kłębka" chmury (chmura to kilka takich
+    // kłębków na sobie, kółko bez pliku). Obrazek kłębka narysuj półprzezroczysty, np. 32 x 32 px.
+    smokeBomb: { src: null },   // np. "assets/smoke_bomb.png"
+    smokeCloud: { src: null },  // np. "assets/smoke_puff.png"
+
     // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
     bomb: { src: null, trim: true },         // np. "assets/bomb.png"
     bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"
@@ -90,7 +98,10 @@ export const TEXTURES = {
 const entries = new Map();   // nazwa -> { def, image, failed, trim }
 const warnedUnknown = new Set();
 
-for (const [name, def] of Object.entries(TEXTURES)) {
+// Podmiana źródła obrazka (np. plik wybrany w edytorze spoza folderu assets/): ścieżka -> adres tymczasowy.
+const sourceOverrides = new Map();
+
+function addEntry(name, def) {
     const entry = { def, image: null, failed: false, trim: undefined };
     if (def.src) {
         entry.image = new Image();
@@ -104,9 +115,32 @@ for (const [name, def] of Object.entries(TEXTURES)) {
                 }
             }
         };
-        entry.image.src = def.src;
+        entry.image.src = sourceOverrides.get(def.src) ?? def.src;
     }
     entries.set(name, entry);
+    return entry;
+}
+
+for (const [name, def] of Object.entries(TEXTURES)) addEntry(name, def);
+
+// ---------------------------------------------------------------------------
+// Tekstury z plików poziomów (JSON): platforma może mieć w polu `texture` ścieżkę do obrazka
+// (np. "assets/budynek.png") zamiast nazwy z TEXTURES, a w `textureMode` sposób rysowania:
+//   "stretch" (domyślnie) = obrazek w rozmiarze platformy, "tile" = powtarzany, "cover" = wypełnia.
+// textureKey() zwraca nazwę, której używa drawTexture (dla zwykłych nazw: tę samą nazwę).
+// ---------------------------------------------------------------------------
+export function textureKey(texture, mode = "stretch") {
+    if (!texture || TEXTURES[texture]) return texture;
+    const drawMode = mode === "tile" || mode === "cover" ? mode : "stretch";
+    const key = `${drawMode}:${texture}`;
+    if (!entries.has(key)) addEntry(key, { src: texture, mode: drawMode });
+    return key;
+}
+
+// Wymusza inne źródło dla ścieżki (np. adres blob: pliku wybranego w edytorze). Działa tylko dla
+// tekstur tworzonych PO tym wywołaniu.
+export function overrideTextureSource(path, url) {
+    sourceOverrides.set(path, url);
 }
 
 const isReady = (entry) => Boolean(entry.image && entry.image.complete && entry.image.naturalWidth > 0);

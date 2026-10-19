@@ -22,7 +22,7 @@ export function createMenu(actions) {
 
     // Przyciski ekranu, które są teraz widoczne (część może mieć atrybut hidden).
     function visibleButtons(name) {
-        return [...(screens.get(name)?.querySelectorAll("button") ?? [])].filter((button) => !button.hidden);
+        return [...(screens.get(name)?.querySelectorAll("button") ?? [])].filter((button) => !button.hidden && !button.disabled);
     }
 
     function hide() {

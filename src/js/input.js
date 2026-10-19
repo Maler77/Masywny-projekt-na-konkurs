@@ -12,6 +12,7 @@ const DEBUG = ["Slash"];
 const PAUSE = ["Escape"];
 const INTERACT = ["KeyE"];
 const GRAPPLE = ["KeyQ"];
+const SMOKE = ["KeyF"];
 // Odpowiedzi w oknie bomby: litery A, B, C (albo cyfry 1, 2, 3).
 const ANSWERS = [["KeyA", "Digit1"], ["KeyB", "Digit2"], ["KeyC", "Digit3"]];
 
@@ -32,7 +33,11 @@ export function createInput() {
     const onKeyDown = (event) => {
         const code = codeOf(event);
         // Na przycisku menu zostawiamy domyślne działanie (Spacja i Enter mają go "klikać").
-        const onButton = event.target instanceof HTMLButtonElement;
+        // W polach tekstowych i listach (edytor) klawisze działają normalnie, np. można wpisać "a" albo spację.
+        const onButton = event.target instanceof HTMLButtonElement
+            || event.target instanceof HTMLInputElement
+            || event.target instanceof HTMLSelectElement
+            || event.target instanceof HTMLTextAreaElement;
         if (GAME_KEYS.has(code) && !onButton) event.preventDefault();
         // Przytrzymany klawisz wysyła powtórzenia; liczymy tylko pierwsze wciśnięcie.
         if (!event.repeat) pressed.add(code);
@@ -66,6 +71,8 @@ export function createInput() {
         // Czy E został dopiero co wciśnięty (interakcja z bombą).
         interactPressed: () => any(INTERACT, pressed),
         grapplePressed: () => any(GRAPPLE, pressed),
+        // Czy F został dopiero co wciśnięty (bomba dymna).
+        smokePressed: () => any(SMOKE, pressed),
         // Indeks odpowiedzi (0 = A, 1 = B, 2 = C) wciśniętej w tej klatce albo -1.
         answerPressed: () => ANSWERS.findIndex((codes) => any(codes, pressed)),
         // Wołane raz na koniec każdej klatki z main.js.

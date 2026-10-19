@@ -39,6 +39,22 @@ const GRAPPLE_BLOCKED_TIME = 0.12;          // lina przecięta przez ścianę d�
 const RELEASE_AIR_ACCEL = 300 * SCALE;      // sterowanie w powietrzu po odpięciu liny (px/s²)
 const RELEASE_AIR_DRAG = 0.6;               // jak szybko wygasa pęd z huśtawki bez sterowania (1/s)
 
+// Bomba dymna (F): leci w linii prostej do najbliższego przeciwnika w zasięgu (jak hak). Po trafieniu
+// w przeciwnika, ścianę albo po przelocie całego zasięgu tworzy się chmura, w której przeciwnicy nic nie widzą.
+const SMOKE_RANGE = GRAPPLE_RANGE;         // zasięg namierzania i lotu (taki jak hak)
+const SMOKE_SPEED = 170 * SCALE;           // prędkość pocisku (px/s)
+const SMOKE_COOLDOWN = 3;                  // odstęp między rzutami (s)
+const SMOKE_RADIUS = 40 * SCALE;           // promień chmury (80 px = 2,5 tila, średnica 5 tili)
+const SMOKE_DURATION = 6;                  // jak długo trwa chmura (s)
+const SMOKE_GROW_TIME = 0.35;              // chmura rośnie od zera do pełnego promienia przez tyle sekund
+const SMOKE_FADE_TIME = 1;                 // w ostatniej sekundzie chmura się kurczy i znika
+const SMOKE_SHOT_SIZE = 4 * SCALE;         // rozmiar pocisku (8 px)
+
+// Skocznia (jump pad): wyrzuca gracza w górę po wejściu na nią (JUMP_PAD_SPEED to prędkość startowa,
+// wysokość ok. 5,3 tila; pojedyncza skocznia może ją zmienić polem `power`, patrz jumpPad() w levels.js).
+const JUMP_PAD_SPEED = 320 * SCALE;
+const JUMP_PAD_SQUASH_TIME = 0.18;         // jak długo skocznia jest "ściśnięta" po odbiciu (tylko wygląd)
+
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
 const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
 const WALL_KICK_SPEED = 100 * SCALE;     // prędkość pozioma odbicia (od ściany)
@@ -178,6 +194,14 @@ export function createGame(initialLevel) {
     // "Cienie" zostawiane przez gracza podczas dashu (tylko efekt wizualny).
     const ghosts = [];
 
+    // Bomba dymna: pociski w locie, chmury, cooldown, krótki komunikat "brak celu".
+    let smokeShots = [];
+    let smokes = [];
+    let smokeCooldown = 0;
+    let smokeNoTarget = 0;
+    let jumpPads = [];
+    let penalty = { amount: 0, time: 0 }; // ostatnia kara czasowa (do wyświetlenia w HUD)
+
     // Animacje gracza (sprite sheet z animations.js).
     const animator = createAnimator(player.sheet);
     let grappleTarget = null;
@@ -286,6 +310,8 @@ export function createGame(initialLevel) {
         enemies.forEach((enemy) => initEnemyArea(enemy, platforms));
         // Kolec w danych poziomu to prostokąt { x, y, w, h } (patrz spike() w levels.js).
         spikes = (next.spikes ?? []).map((data) => ({ texture: "spike", color: "#aab4bd", ...data }));
+        // Skocznia w danych poziomu to prostokąt { x, y, w, h, power } (patrz jumpPad() w levels.js).
+        jumpPads = (next.jumpPads ?? []).map((data) => ({ texture: "jumpPad", color: "#e0a030", power: 1, ...data, squash: 0 }));
         syncSizes();
         camera.setLevelSize(levelWidth, levelHeight);
         reset();
@@ -331,6 +357,12 @@ export function createGame(initialLevel) {
         player.maxHp = level.hp ?? PLAYER_MAX_HP;
         player.hp = player.maxHp;
         hurtFlash = 0;
+        smokeShots = [];
+        smokes = [];
+        smokeCooldown = 0;
+        smokeNoTarget = 0;
+        penalty = { amount: 0, time: 0 };
+        for (const pad of jumpPads) pad.squash = 0;
         respawnPlayer();
         timeLeft = timeLimit;
     }
@@ -338,6 +370,14 @@ export function createGame(initialLevel) {
     // Odlicza czas. Wołane z update(), a także podczas okna z pytaniem (czas wtedy leci dalej).
     function tickTimer(dt) {
         timeLeft = Math.max(0, timeLeft - dt);
+        penalty.time = Math.max(0, penalty.time - dt);
+    }
+
+    // Kara czasowa (np. za złą odpowiedź przy bombie): zabiera `seconds` sekund z timera.
+    // Gdy czas spadnie do zera, main.js kończy poziom jak przy zwykłym końcu czasu.
+    function addTimePenalty(seconds) {
+        timeLeft = Math.max(0, timeLeft - seconds);
+        penalty = { amount: seconds, time: 2 };
     }
 
     // Najbliższa nierozbrojona bomba w zasięgu interakcji albo null.
@@ -543,9 +583,129 @@ export function createGame(initialLevel) {
         };
     }
 
+    // ----- Bomba dymna -----
+
+    // Aktualny promień chmury: rośnie na początku i kurczy się na końcu.
+    function smokeRadius(cloud) {
+        const grow = Math.min(1, cloud.age / SMOKE_GROW_TIME);
+        const eased = 1 - (1 - grow) * (1 - grow);
+        const fade = Math.max(0, Math.min(1, (SMOKE_DURATION - cloud.age) / SMOKE_FADE_TIME));
+        return SMOKE_RADIUS * eased * fade;
+    }
+
+    // Najbliższy aktywny przeciwnik w zasięgu bomby dymnej (liczony od środka gracza) albo null.
+    // Ściany nie liczą się: jeśli stoi jedna na drodze, pocisk w nią uderzy i tam powstanie chmura.
+    function nearestSmokeTarget() {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        let best = null;
+        let bestDistance = SMOKE_RANGE;
+        for (const enemy of enemies) {
+            if (enemy.state !== "active") continue;
+            const distance = Math.hypot(cx - (enemy.x + enemy.w / 2), cy - (enemy.y + enemy.h / 2));
+            if (distance <= bestDistance) {
+                best = enemy;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    // Rzut: pocisk leci prosto w stronę przeciwnika, na którego wskazywał w chwili rzutu.
+    function fireSmoke() {
+        const target = nearestSmokeTarget();
+        if (!target) {
+            smokeNoTarget = 0.8; // krótki komunikat "brak celu", cooldown nie startuje
+            return false;
+        }
+        const ox = player.x + player.w / 2;
+        const oy = player.y + player.h / 2;
+        const dx = target.x + target.w / 2 - ox;
+        const dy = target.y + target.h / 2 - oy;
+        const length = Math.hypot(dx, dy) || 1;
+        smokeShots.push({ x: ox, y: oy, dx: dx / length, dy: dy / length, travelled: 0 });
+        smokeCooldown = SMOKE_COOLDOWN;
+        return true;
+    }
+
+    function spawnSmoke(x, y) {
+        // Kłębki chmury: stałe losowe kształty (tylko wygląd).
+        const puffs = Array.from({ length: 12 }, () => ({
+            angle: Math.random() * Math.PI * 2,
+            distance: 0.15 + Math.random() * 0.45,
+            size: 0.35 + Math.random() * 0.2,
+            spin: (Math.random() - 0.5) * 0.8,
+        }));
+        smokes.push({ x, y, age: 0, puffs });
+    }
+
+    // Lot pocisków małymi krokami (żeby nie przeskoczyć przez cienką ścianę) i tworzenie chmur.
+    function updateSmokeShots(dt) {
+        for (let i = smokeShots.length - 1; i >= 0; i--) {
+            const shot = smokeShots[i];
+            let remaining = SMOKE_SPEED * dt;
+            let hit = null;
+            while (remaining > 0 && !hit) {
+                const step = Math.min(remaining, 2 * SCALE);
+                remaining -= step;
+                const nx = shot.x + shot.dx * step;
+                const ny = shot.y + shot.dy * step;
+                const wall = platforms.some((p) => p.solid !== false && !p.oneWay
+                    && nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h);
+                const foe = enemies.some((e) => e.state === "active"
+                    && nx >= e.x && nx <= e.x + e.w && ny >= e.y && ny <= e.y + e.h);
+                if (wall) {
+                    hit = { x: shot.x, y: shot.y }; // ostatni wolny punkt przed ścianą
+                } else if (foe || nx < 0 || nx > levelWidth || ny < 0 || ny > levelHeight) {
+                    hit = { x: nx, y: ny };
+                } else {
+                    shot.x = nx;
+                    shot.y = ny;
+                    shot.travelled += step;
+                    if (shot.travelled >= SMOKE_RANGE) hit = { x: nx, y: ny }; // przeciwnik uciekł: chmura na końcu zasięgu
+                }
+            }
+            if (hit) {
+                spawnSmoke(hit.x, hit.y);
+                smokeShots.splice(i, 1);
+            }
+        }
+    }
+
+    function updateSmoke(dt, input) {
+        smokeCooldown = Math.max(0, smokeCooldown - dt);
+        smokeNoTarget = Math.max(0, smokeNoTarget - dt);
+        if (input.smokePressed() && smokeCooldown <= 0 && player.hp > 0) fireSmoke();
+        updateSmokeShots(dt);
+        for (let i = smokes.length - 1; i >= 0; i--) {
+            smokes[i].age += dt;
+            if (smokes[i].age >= SMOKE_DURATION) smokes.splice(i, 1);
+        }
+    }
+
+    // ----- Skocznie -----
+
+    // Wejście na skocznię od góry (albo stanie na niej) wyrzuca gracza w górę. Nie działa na linie.
+    function resolveJumpPads(dt) {
+        for (const pad of jumpPads) {
+            pad.squash = Math.max(0, pad.squash - dt);
+            if (grappleTarget || player.vy < 0 || !overlaps(player, pad)) continue;
+            if (player.y + player.h > pad.y + pad.h + 1) continue; // stopy muszą być przy skoczni, nie pod nią
+            player.vy = -JUMP_PAD_SPEED * pad.power;
+            player.onGround = false;
+            player.canCutJump = false; // puszczenie skoku nie skraca odbicia
+            player.jumpBuffer = 0;
+            player.dashTime = 0;
+            pad.squash = JUMP_PAD_SQUASH_TIME;
+        }
+    }
+
     // Ruch przeciwników: patrol, pole widzenia, pościg i grawitacja (patrz enemies.js).
     function updateEnemies(dt) {
-        const world = { platforms, player, gravity: GRAVITY, maxFall: MAX_FALL_SPEED };
+        const world = {
+            platforms, player, gravity: GRAVITY, maxFall: MAX_FALL_SPEED,
+            smokes: smokes.map((cloud) => ({ x: cloud.x, y: cloud.y, r: smokeRadius(cloud) })),
+        };
         for (const enemy of enemies) updateEnemy(enemy, world, dt);
     }
 
@@ -684,9 +844,10 @@ export function createGame(initialLevel) {
         let dashedThisFrame = false;
         let dashDirection = player.dashDir;
         syncSizes();
-        tickTimer(dt);
+        if (!allDefused()) tickTimer(dt);
         player.invulnerableTime = Math.max(0, player.invulnerableTime - dt);
         hurtFlash = Math.max(0, hurtFlash - dt);
+        updateSmoke(dt, input);
         updateEnemies(dt);
 
         grappleCooldown = Math.max(0, grappleCooldown - dt);
@@ -853,6 +1014,7 @@ export function createGame(initialLevel) {
             ? (dashOriginX - (dashTarget.x + dashTarget.w / 2)) * dashTarget.facing < 0
                 && dashDirection === dashTarget.facing
             : false;
+        resolveJumpPads(dt);
         resolveSpikes();
 
         return { dashed: dashedThisFrame, dashDirection, dashTarget, dashFromBehind };
@@ -878,6 +1040,74 @@ export function createGame(initialLevel) {
             ctx.fillStyle = "#10201f"; // oko, żeby było widać, w którą stronę patrzy
             ctx.fillRect(r.w - 5 * SCALE, 5 * SCALE, 2 * SCALE, 2 * SCALE);
         }
+        ctx.restore();
+    }
+
+    // Skocznia: teksturą (kafelek 1 x 1/4 tila z textures.js), a bez niej sprężyna z płytką.
+    // Po odbiciu płytka na chwilę się ściska.
+    function drawJumpPad(ctx, pad) {
+        const drop = pad.squash > 0 ? Math.round(pad.h * 0.4) : 0;
+        if (drawTexture(ctx, pad.texture, pad.x, pad.y + drop, pad.w, pad.h - drop)) return;
+
+        const x = Math.round(pad.x);
+        const y = Math.round(pad.y);
+        const w = Math.round(pad.w);
+        const h = Math.round(pad.h);
+        ctx.fillStyle = "#3a2f1c";                      // podstawa
+        ctx.fillRect(x, y + h - 2, w, 2);
+        for (let tx = 4; tx + 2 <= w - 2; tx += 6) {   // sprężyna
+            ctx.fillStyle = "#c8c2b6";
+            ctx.fillRect(x + tx, y + drop + 2, 2, h - drop - 4);
+        }
+        ctx.fillStyle = pad.color;                      // płytka
+        ctx.fillRect(x, y + drop, w, 3);
+        ctx.fillStyle = "#ffd98a";
+        ctx.fillRect(x, y + drop, w, 1);
+    }
+
+    // Pocisk bomby dymnej (mały kwadrat) i chmura (kilka półprzezroczystych kłębków).
+    function drawSmokeShot(ctx, shot) {
+        const size = SMOKE_SHOT_SIZE;
+        const x = Math.round(shot.x - size / 2);
+        const y = Math.round(shot.y - size / 2);
+        if (drawTexture(ctx, "smokeBomb", x, y, size, size)) return;
+        ctx.fillStyle = "#2b3138";
+        ctx.fillRect(x, y, size, size);
+        ctx.fillStyle = "#8a949e";
+        ctx.fillRect(x + 1, y + 1, size - 4, 2);
+    }
+
+    function drawSmoke(ctx, cloud) {
+        const radius = smokeRadius(cloud);
+        if (radius <= 0) return;
+        const fade = Math.max(0, Math.min(1, (SMOKE_DURATION - cloud.age) / SMOKE_FADE_TIME));
+        ctx.save();
+        ctx.globalAlpha = 0.55 * (0.4 + 0.6 * fade);
+        for (const puff of cloud.puffs) {
+            const angle = puff.angle + cloud.age * puff.spin;
+            const px = cloud.x + Math.cos(angle) * puff.distance * radius;
+            const py = cloud.y + Math.sin(angle) * puff.distance * radius;
+            const pr = puff.size * radius;
+            if (drawTexture(ctx, "smokeCloud", px - pr, py - pr, pr * 2, pr * 2)) continue;
+            ctx.fillStyle = "#c3c9d0";
+            ctx.beginPath();
+            ctx.arc(px, py, pr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // "?" nad oślepionym przeciwnikiem.
+    function drawBlindMark(ctx, enemy) {
+        if (!enemy.blind || enemy.state !== "active") return;
+        ctx.save();
+        ctx.font = `700 ${10 * SCALE}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#1a1f24";
+        ctx.fillText("?", Math.round(enemy.x + enemy.w / 2) + 1, Math.round(enemy.y - 3 * SCALE) + 1);
+        ctx.fillStyle = "#dfe6ee";
+        ctx.fillText("?", Math.round(enemy.x + enemy.w / 2), Math.round(enemy.y - 3 * SCALE));
         ctx.restore();
     }
 
@@ -986,7 +1216,7 @@ export function createGame(initialLevel) {
     // Pole widzenia przeciwnika: półprzezroczysty stożek przycinany przez ściany. W pościgu robi się
     // czerwony, po dotknięciu od tyłu pomarańczowy. Kąt, długość i przezroczystość: enemies.js.
     function drawEnemyVision(ctx, enemy) {
-        if (enemy.state !== "active" || enemy.vision.alpha <= 0) return;
+        if (enemy.state !== "active" || enemy.vision.alpha <= 0 || enemy.blind) return; // oślepiony nie ma stożka
         const points = visionPolygon(enemy, platforms);
         const mode = enemy.ai.mode;
         ctx.save();
@@ -1128,6 +1358,30 @@ export function createGame(initialLevel) {
     }
 
     // Debug w układzie poziomu: hitboxy i wektory.
+    // Debug bomby dymnej: promień chmur, lot pocisków i linia do namierzonego przeciwnika.
+    function drawDebugSmoke(ctx) {
+        for (const pad of jumpPads) {
+            ctx.strokeStyle = "rgba(255, 170, 40, 0.95)";
+            outline(ctx, pad.x, pad.y, pad.w, pad.h);
+        }
+        ctx.strokeStyle = "rgba(190, 200, 215, 0.9)";
+        ctx.setLineDash([3, 3]);
+        for (const cloud of smokes) {
+            ctx.beginPath();
+            ctx.arc(cloud.x, cloud.y, smokeRadius(cloud), 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        const target = nearestSmokeTarget();
+        if (target && smokeCooldown <= 0) {
+            ctx.strokeStyle = "rgba(190, 200, 215, 0.7)";
+            ctx.beginPath();
+            ctx.moveTo(player.x + player.w / 2, player.y + player.h / 2);
+            ctx.lineTo(target.x + target.w / 2, target.y + target.h / 2);
+            ctx.stroke();
+        }
+    }
+
     function drawDebugWorld(ctx) {
         ctx.lineWidth = 1;
 
@@ -1165,6 +1419,7 @@ export function createGame(initialLevel) {
         ctx.stroke();
 
         drawDebugGrapple(ctx);
+        drawDebugSmoke(ctx);
 
         // Active and cuffed enemy hitboxes (red/gray) with their cuffing ranges.
         for (const enemy of enemies) {
@@ -1279,7 +1534,8 @@ export function createGame(initialLevel) {
             `onGround: ${player.onGround}   facing: ${player.facing}`,
             `dash: ${dash}`,
             `ściana: ${player.wallDir}  ost.: ${player.lastWallJumpSide}  cd: ${wallCooldown.toFixed(2)}  ślizg: ${player.wallSlideTime.toFixed(2)}`,
-            `HP: ${player.hp}/${player.maxHp}   nietykalny: ${player.invulnerableTime.toFixed(2)} s   checkpoint: ${checkpoint.x.toFixed(0)},${checkpoint.y.toFixed(0)}   kolce: ${spikes.length}`,
+            `HP: ${player.hp}/${player.maxHp}   nietykalny: ${player.invulnerableTime.toFixed(2)} s   checkpoint: ${checkpoint.x.toFixed(0)},${checkpoint.y.toFixed(0)}   kolce: ${spikes.length}   skocznie: ${jumpPads.length}`,
+            `dym: ${smokeCooldown > 0 ? `cooldown ${smokeCooldown.toFixed(1)} s` : "gotowy"}   zasięg: ${SMOKE_RANGE.toFixed(0)} px   chmury: ${smokes.length}   pociski: ${smokeShots.length}   ślepi: ${enemies.filter((e) => e.blind).length}`,
             ...grappleDebugLines(),
             `czas: ${timeLeft.toFixed(1)} s   bomby: ${defusedCount()}/${bombs.length}   w zasięgu: ${nearbyBomb() ? "tak" : "nie"}`,
             `przeciwnicy: ${enemyCounts.active} aktywnych / ${enemyCounts.cuffed} zakutych`,
@@ -1321,6 +1577,20 @@ export function createGame(initialLevel) {
             drawHeart(ctx, 6 * SCALE + i * (heartSize + 2 * SCALE), 14 * SCALE, heartSize, i < player.hp);
         }
 
+        // Bomba dymna: gotowość (F), czas do kolejnego rzutu albo komunikat o braku celu.
+        ctx.textAlign = "left";
+        ctx.font = `${6 * SCALE}px system-ui, sans-serif`;
+        if (smokeNoTarget > 0) {
+            ctx.fillStyle = "#ffb347";
+            ctx.fillText("Dym: brak celu w zasięgu", 6 * SCALE, 31 * SCALE);
+        } else if (smokeCooldown > 0) {
+            ctx.fillStyle = "rgba(232, 237, 244, 0.55)";
+            ctx.fillText(`Dym: ${smokeCooldown.toFixed(1)} s`, 6 * SCALE, 31 * SCALE);
+        } else {
+            ctx.fillStyle = "#a4f1dc";
+            ctx.fillText("Dym [F]: gotowy", 6 * SCALE, 31 * SCALE);
+        }
+
         // Timer i bomby w prawym górnym rogu
         ctx.fillStyle = "rgba(10, 15, 22, 0.55)";
         ctx.fillRect(VIEW_WIDTH - 54 * SCALE, 4 * SCALE, 50 * SCALE, 25 * SCALE);
@@ -1333,6 +1603,15 @@ export function createGame(initialLevel) {
         ctx.font = `${6 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.9)";
         ctx.fillText(`Bomby: ${defusedCount()}/${bombs.length}`, VIEW_WIDTH - 8 * SCALE, 26 * SCALE);
+
+        // Kara czasowa (np. zła odpowiedź): czerwony napis pod timerem przez chwilę.
+        if (penalty.time > 0) {
+            ctx.globalAlpha = Math.min(1, penalty.time);
+            ctx.font = `700 ${9 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+            ctx.fillStyle = "#ff6b6b";
+            ctx.fillText(`−${penalty.amount} s`, VIEW_WIDTH - 8 * SCALE, 38 * SCALE);
+            ctx.globalAlpha = 1;
+        }
     }
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
@@ -1374,7 +1653,24 @@ export function createGame(initialLevel) {
             }
         }
 
+        // Exit at the far-right edge. It lights up when every bomb is defused.
+        const exitWidth = 28 * SCALE;
+        const exitHeight = 48 * SCALE;
+        const exitX = levelWidth - exitWidth;
+        const exitY = levelHeight - 1.25 * TILE - exitHeight;
+        const exitActive = allDefused();
+        ctx.fillStyle = exitActive ? "rgba(69, 224, 164, 0.28)" : "rgba(110, 130, 145, 0.18)";
+        ctx.fillRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.strokeStyle = exitActive ? "#55e6ad" : "#74838d";
+        ctx.lineWidth = 3 * SCALE;
+        ctx.strokeRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.fillStyle = exitActive ? "#b9ffe0" : "#aab4bd";
+        ctx.font = `700 ${8 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText("EXIT", exitX + exitWidth / 2, exitY + exitHeight / 2 + 3 * SCALE);
+
         for (const spike of spikes) drawSpike(ctx, spike);
+        for (const pad of jumpPads) drawJumpPad(ctx, pad);
 
         if (grappleTarget) {
             ctx.strokeStyle = "#f2d37b";
@@ -1392,6 +1688,7 @@ export function createGame(initialLevel) {
         for (const enemy of enemies) drawEnemyVision(ctx, enemy);
         for (const enemy of enemies) drawEnemy(ctx, enemy);
         for (const enemy of enemies) drawExclaim(ctx, enemy);
+        for (const enemy of enemies) drawBlindMark(ctx, enemy);
 
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
@@ -1400,6 +1697,10 @@ export function createGame(initialLevel) {
         // Po utracie HP gracz miga (jest nietykalny).
         const blinkHidden = player.invulnerableTime > 0 && Math.floor(player.invulnerableTime * 12) % 2 === 0;
         drawPlayer(ctx, player.x, player.y, playerFacing(animator.name), blinkHidden ? 0.35 : 1, scale);
+
+        // Pociski i chmury dymu rysujemy na wierzchu, żeby chmura przykrywała też gracza i przeciwników.
+        for (const shot of smokeShots) drawSmokeShot(ctx, shot);
+        for (const cloud of smokes) drawSmoke(ctx, cloud);
 
         if (hud) drawInteractPrompt(ctx);
         if (debug) drawDebugWorld(ctx);
@@ -1441,6 +1742,10 @@ export function createGame(initialLevel) {
             };
         },
         tickTimer,
+        addTimePenalty,
+        // Przeciwnicy i stan dymu (tylko do odczytu; używają ich debug i testy).
+        get enemies() { return enemies; },
+        get smoke() { return { cooldown: smokeCooldown, shots: smokeShots, clouds: smokes.map((c) => ({ x: c.x, y: c.y, age: c.age, r: smokeRadius(c) })) }; },
         nearbyBomb,
         nearbyEnemy,
         cuffEnemy: cuff,
@@ -1449,6 +1754,7 @@ export function createGame(initialLevel) {
         activeEnemyCounts,
         defuse,
         allDefused,
+        atRightEdge: () => player.x + player.w >= levelWidth - 1,
         get level() { return level; },
         get timeLeft() { return timeLeft; },
         get hp() { return player.hp; },
