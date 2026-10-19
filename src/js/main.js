@@ -332,7 +332,7 @@ function openBomb(bomb) {
     setState("bomb");
 }
 
-// Zła odpowiedź = kara czasowa (odpowiedź zostaje wyłączona), dobra = bomba rozbrojona (a po ostatniej wygrana).
+// Zła odpowiedź = kara czasowa; po rozbrojeniu wszystkich bomb trzeba jeszcze dotrzeć do wyjścia po prawej.
 function answerBomb(index) {
     if (state !== "bomb" || !activeBomb || !activeQuestion || !Number.isInteger(index) || index < 0 || index > 2) return;
     const bombKey = `${currentLevel}:${activeBomb.id}`;
@@ -342,8 +342,7 @@ function answerBomb(index) {
         game.defuse(activeBomb);
         activeBomb = null;
         activeQuestion = null;
-        if (game.allDefused()) winGame();
-        else setState("playing");
+        setState("playing");
     } else {
         const wrong = wrongAnswers.get(bombKey) ?? new Set();
         wrong.add(index);
@@ -424,12 +423,14 @@ function frame(now) {
 
         if (state === "playing") game.resolveEnemyAttack();
 
+        if (state === "playing" && game.allDefused() && game.atRightEdge()) winGame();
+
         // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
         // tylko cofają gracza do checkpointu (patrz game.js).
         if (state === "playing" && game.isDead()) loseGame("Straciłeś całe życie!");
     } else if (state === "bomb") {
         // Postać stoi, ale czas leci dalej.
-        game.tickTimer(dt);
+        if (!game.allDefused()) game.tickTimer(dt);
 
         const answer = input.answerPressed(); // klawisze A, B, C
         if (answer !== -1) answerBomb(answer);
@@ -442,7 +443,7 @@ function frame(now) {
     }
 
     // Koniec czasu = przegrana (także podczas pytania).
-    if ((state === "playing" || state === "bomb") && game.timeLeft <= 0) {
+    if ((state === "playing" || state === "bomb") && !game.allDefused() && game.timeLeft <= 0) {
         loseGame("Czas minął! Bomby wybuchły.");
     }
 

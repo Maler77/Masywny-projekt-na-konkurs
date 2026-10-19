@@ -844,7 +844,7 @@ export function createGame(initialLevel) {
         let dashedThisFrame = false;
         let dashDirection = player.dashDir;
         syncSizes();
-        tickTimer(dt);
+        if (!allDefused()) tickTimer(dt);
         player.invulnerableTime = Math.max(0, player.invulnerableTime - dt);
         hurtFlash = Math.max(0, hurtFlash - dt);
         updateSmoke(dt, input);
@@ -1653,6 +1653,22 @@ export function createGame(initialLevel) {
             }
         }
 
+        // Exit at the far-right edge. It lights up when every bomb is defused.
+        const exitWidth = 28 * SCALE;
+        const exitHeight = 48 * SCALE;
+        const exitX = levelWidth - exitWidth;
+        const exitY = levelHeight - 1.25 * TILE - exitHeight;
+        const exitActive = allDefused();
+        ctx.fillStyle = exitActive ? "rgba(69, 224, 164, 0.28)" : "rgba(110, 130, 145, 0.18)";
+        ctx.fillRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.strokeStyle = exitActive ? "#55e6ad" : "#74838d";
+        ctx.lineWidth = 3 * SCALE;
+        ctx.strokeRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.fillStyle = exitActive ? "#b9ffe0" : "#aab4bd";
+        ctx.font = `700 ${8 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText("EXIT", exitX + exitWidth / 2, exitY + exitHeight / 2 + 3 * SCALE);
+
         for (const spike of spikes) drawSpike(ctx, spike);
         for (const pad of jumpPads) drawJumpPad(ctx, pad);
 
@@ -1738,6 +1754,7 @@ export function createGame(initialLevel) {
         activeEnemyCounts,
         defuse,
         allDefused,
+        atRightEdge: () => player.x + player.w >= levelWidth - 1,
         get level() { return level; },
         get timeLeft() { return timeLeft; },
         get hp() { return player.hp; },
