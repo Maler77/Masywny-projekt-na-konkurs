@@ -79,6 +79,9 @@ export const TEXTURES = {
     // Bomby w świecie gry. bombDefused to bomba po rozbrojeniu.
     bomb: { src: null, trim: true },         // np. "assets/bomb.png"
     bombDefused: { src: null, trim: true },  // np. "assets/bomb_defused.png"
+    // Panel rozbrajania (poziomy z mode: "panel"): jedna "bomba" narysowana jako panel. panelDefused po rozbrojeniu.
+    panel: { src: null, trim: true },         // np. "assets/panel.png"
+    panelDefused: { src: null, trim: true },  // np. "assets/panel_defused.png"
 
     // Elementy interfejsu (HTML):
     menuBackground: { src: null, mode: "cover" }, // tło menu głównego, np. "assets/menu_background.png"
@@ -88,6 +91,8 @@ export const TEXTURES = {
     level3Thumbnail: { src: null, mode: "cover" },
     level4Thumbnail: { src: null, mode: "cover" },
     winBackground: { src: null, mode: "cover" },  // ekran wygranej
+    storyBackground: { src: null, mode: "cover" }, // ekran fabuły (prolog, przerywniki, epilog)
+    storyImage: { src: null, mode: "cover" },      // ramka na ilustrację na ekranie fabuły (można też podać "image" w story.json)
     loseBackground: { src: "assets/decha.jpg", mode: "cover" }, // ekran przegranej
 };
 

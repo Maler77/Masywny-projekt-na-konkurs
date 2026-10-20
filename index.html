@@ -64,6 +64,17 @@
                 </div>
             </div>
 
+            <!-- Ekran fabuły (prolog, przerywniki między poziomami, epilog). Treść: src/data/story.json -->
+            <div class="menu" data-screen="story" data-texture="storyBackground" role="dialog" aria-labelledby="story-title" hidden>
+                <div class="story">
+                    <p class="story__label">Fabuła</p>
+                    <h3 class="menu__title story__title" id="story-title"></h3>
+                    <div class="story__image" id="story-image" data-texture="storyImage" aria-hidden="true">miejsce na ilustrację</div>
+                    <p class="story__text" id="story-text"></p>
+                    <button class="menu__button menu__button--primary" type="button" data-action="story-next">Dalej</button>
+                </div>
+            </div>
+
             <!-- Ekran przegranej -->
             <div class="menu" data-screen="lose" data-texture="loseBackground" role="dialog" aria-labelledby="lose-title" hidden>
                 <h3 id="lose-title" class="menu__title menu__title--lose">Przegrana</h3>

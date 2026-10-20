@@ -1,0 +1,111 @@
+{
+    "name": "Poziom 6",
+    "subtitle": "Trzy piętra",
+    "questionCategory": "hard",
+    "mode": "panel",
+    "paratroopers": 16,
+    "background": [
+        "background2"
+    ],
+    "timeLimit": 150,
+    "width": 1400,
+    "height": 480,
+    "spawn": {
+        "x": 64,
+        "y": 440
+    },
+    "platforms": [
+        {
+            "x": 0,
+            "y": 440,
+            "w": 1400,
+            "h": 40,
+            "texture": "ground"
+        },
+        {
+            "x": 0,
+            "y": 320,
+            "w": 1100,
+            "h": 24,
+            "texture": "platform"
+        },
+        {
+            "x": 232,
+            "y": 200,
+            "w": 1168,
+            "h": 24,
+            "texture": "platform"
+        }
+    ],
+    "bombs": [
+        {
+            "x": 1360,
+            "y": 200
+        }
+    ],
+    "enemies": [
+        {
+            "type": "weak",
+            "x": 380,
+            "y": 440,
+            "id": "parter",
+            "area": {
+                "x1": 300,
+                "y1": 200,
+                "x2": 900,
+                "y2": 440
+            }
+        },
+        {
+            "type": "strong",
+            "x": 500,
+            "y": 320,
+            "id": "pietro-1",
+            "area": {
+                "x1": 300,
+                "y1": 100,
+                "x2": 700,
+                "y2": 320
+            }
+        },
+        {
+            "type": "weak",
+            "x": 700,
+            "y": 200,
+            "id": "pietro-2a",
+            "area": {
+                "x1": 560,
+                "y1": 0,
+                "x2": 900,
+                "y2": 200
+            }
+        },
+        {
+            "type": "weak",
+            "x": 1100,
+            "y": 200,
+            "id": "pietro-2b",
+            "area": {
+                "x1": 1000,
+                "y1": 0,
+                "x2": 1250,
+                "y2": 200
+            }
+        }
+    ],
+    "spikes": [],
+    "jumpPads": [
+        {
+            "x": 1180,
+            "y": 432,
+            "w": 32,
+            "h": 8
+        },
+        {
+            "x": 80,
+            "y": 312,
+            "w": 32,
+            "h": 8
+        }
+    ]
+}

@@ -117,13 +117,34 @@ kbd {
 /* Menu główne i ekrany końcowe mają własne, nieprzezroczyste tło (bez widocznej sceny gry). */
 .menu[data-screen="main"],
 .menu[data-screen="win"],
-.menu[data-screen="lose"] {
+.menu[data-screen="lose"],
+.menu[data-screen="story"] {
     background-color: #0d1620;
     backdrop-filter: none;
 }
 .menu[data-screen="main"] { --fallback: linear-gradient(160deg, #18304a 0%, #0d1620 55%, #15291f 100%); }
 .menu[data-screen="win"]  { --fallback: radial-gradient(circle at 50% 30%, #1f5a45, #0d1620 70%); }
 .menu[data-screen="lose"] { --fallback: radial-gradient(circle at 50% 30%, #5a1f2a, #0d1620 70%); }
+.menu[data-screen="story"] { --fallback: linear-gradient(160deg, #241b38 0%, #0d1620 60%, #14202b 100%); }
+
+/* Ekran fabuły: etykieta, tytuł, ilustracja (albo ramka na nią) i tekst. Kolejne akapity oddziela pusta linia. */
+.story { display: flex; flex-direction: column; align-items: center; gap: .9rem; width: min(44rem, 100%); text-align: center; }
+.story__label { margin: 0; color: #aab7c5; font-size: .8rem; letter-spacing: .2em; text-transform: uppercase; }
+.story__title { margin: 0; }
+.story__title:empty { display: none; }
+.story__image {
+    display: grid;
+    place-items: center;
+    width: min(30rem, 80%);
+    aspect-ratio: 16 / 9;
+    border: 2px dashed #4a5d70;
+    border-radius: .5rem;
+    color: #6f8499;
+    font-size: .9rem;
+}
+.story__image.has-image { border: 2px solid #4a5d70; color: transparent; background-size: cover; background-position: center; }
+.story__text { margin: 0 0 .5rem; max-width: 40rem; color: #dbe4ee; font-size: 1.15rem; line-height: 1.6; white-space: pre-line; }
+.story__text:empty { display: none; }
 
 /* Okno z pytaniem: duża część ekranu, napis u góry, pod nim odpowiedzi. */
 .bomb-panel {
@@ -208,6 +229,7 @@ kbd {
 body[data-state="playing"] .controls-corner { opacity: 0; }
 body[data-state="editor"] .controls-corner,
 body[data-state="bomb"] .controls-corner,
+body[data-state="story"] .controls-corner,
 body[data-state="won"] .controls-corner,
 body[data-state="lost"] .controls-corner { display: none; }
 

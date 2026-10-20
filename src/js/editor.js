@@ -18,7 +18,7 @@ import { TILE, VIEW_HEIGHT } from "./config.js";
 import { TEXTURES, drawBox, drawTexture, overrideTextureSource, textureKey } from "./textures.js";
 import { ENEMY_TYPES } from "./enemies.js";
 import {
-    QUESTION_CATEGORIES, listDrafts, loadAutosave, loadDraft, newLevel, normalizeLevel,
+    PANEL_QUESTION_CATEGORY, QUESTION_CATEGORIES, listDrafts, loadAutosave, loadDraft, newLevel, normalizeLevel,
     saveAutosave, saveDraft, serializeLevel,
 } from "./levelstore.js";
 
@@ -41,7 +41,7 @@ const TOOLS = [
     { id: "oneway", group: "Teren (przeciągnij)", label: "Platforma jednostronna", hint: "Przeciągnij prostokąt. Przez taką platformę można przejść od dołu." },
     { id: "spike", group: "Teren (przeciągnij)", label: "Kolce", hint: "Przeciągnij w poziomie: kolce o szerokości całych tili, stoją na podłożu pod kursorem." },
     { id: "spawn", group: "Obiekty (kliknij)", label: "Punkt startu", hint: "Klik ustawia miejsce startu gracza (jest tylko jedno)." },
-    { id: "bomb", group: "Obiekty (kliknij)", label: "Bomba", hint: "Klik stawia bombę na podłożu pod kursorem." },
+    { id: "bomb", group: "Obiekty (kliknij)", label: "Bomba / panel", hint: "Klik stawia bombę na podłożu pod kursorem. W trybie „Panel” jest tylko jeden (nowy zastępuje stary)." },
     { id: "enemy-weak", group: "Obiekty (kliknij)", label: "Przeciwnik słaby", hint: "Klik stawia przeciwnika, potem przeciągnij prostokąt pola patrolu (Enter = domyślne pole)." },
     { id: "enemy-strong", group: "Obiekty (kliknij)", label: "Przeciwnik silny", hint: "Klik stawia przeciwnika, potem przeciągnij prostokąt pola patrolu (Enter = domyślne pole)." },
     { id: "jumppad", group: "Obiekty (kliknij)", label: "Skocznia", hint: "Klik stawia skocznię (1 tile) na podłożu pod kursorem." },
@@ -255,6 +255,7 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
             commit();
         } else if (tool === "bomb") {
             const pos = pointPos(p.x, p.y);
+            if (model.mode === "panel") model.bombs = []; // panel jest tylko jeden
             addTo("bombs", { x: pos.x, y: pos.y });
         } else if (tool === "enemy-weak" || tool === "enemy-strong") {
             const type = tool === "enemy-weak" ? "weak" : "strong";
@@ -611,7 +612,28 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
                 loadSelect, fileInput),
             textField("Nazwa", () => model.name, (v) => { model.name = v.trim() || "Bez nazwy"; }),
             textField("Podtytuł", () => model.subtitle, (v) => { model.subtitle = v; }),
-            selectField("Pytania", QUESTION_CATEGORIES.map((c) => [c, c]), () => model.questionCategory, (v) => { model.questionCategory = v; }),
+            selectField("Tryb", [["bombs", "Bomby + drzwi"], ["panel", "Panel (skradanka)"]], () => model.mode ?? "bombs", (v) => {
+                if (v === "panel") {
+                    model.mode = "panel";
+                    model.questionCategory = PANEL_QUESTION_CATEGORY;
+                    if (model.bombs.length > 1) {
+                        model.bombs = model.bombs.slice(0, 1);
+                        say("Tryb Panel: zostawiono tylko pierwszą bombę (jako panel).");
+                    }
+                } else {
+                    delete model.mode;
+                    delete model.paratroopers;
+                }
+                sel = null;
+                buildLevelBox();
+                refreshAll();
+            }),
+            model.mode === "panel"
+                ? el("p", { class: "editor__hint", text: "Panel: pytania zawsze trudne; zauważenie przez przeciwnika = alarm i spadochroniarze. Bez drzwi, wygrywasz po rozbrojeniu panelu." })
+                : selectField("Pytania", QUESTION_CATEGORIES.map((c) => [c, c]), () => model.questionCategory, (v) => { model.questionCategory = v; }),
+            model.mode === "panel"
+                ? numberField("Spadochroniarze", () => model.paratroopers ?? 14, (v) => { model.paratroopers = Math.max(1, Math.min(60, Math.round(v))); }, { min: 1 })
+                : document.createComment("brak"), // levelBox.append() nie pomija null, więc pusty węzeł
             selectField("Tło", backgrounds.map((b) => [b, b]), () => model.background?.[0] ?? "background", (v) => { model.background = [v]; }),
             el("div", { class: "editor__grid" },
                 numberField("Czas (s)", () => model.timeLimit, (v) => { model.timeLimit = v; }, { min: 1 }),
@@ -913,7 +935,7 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
     }
 
     function testLevel() {
-        if (model.bombs.length === 0) say("Uwaga: poziom nie ma bomb, więc nie da się go wygrać.");
+        if (model.bombs.length === 0) say(model.mode === "panel" ? "Uwaga: poziom nie ma panelu, więc nie da się go wygrać." : "Uwaga: poziom nie ma bomb, więc nie da się go wygrać.");
         saveAutosave(model);
         onTest?.(serializeLevel(model));
     }
@@ -950,7 +972,17 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
     function drawBomb(ctx, x, y, alpha = 1) {
         ctx.save();
         ctx.globalAlpha = alpha;
-        if (!drawTexture(ctx, "bomb", x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE)) {
+        if (model.mode === "panel") {
+            // W trybie "panel" jedyna bomba jest panelem rozbrajania.
+            if (!drawTexture(ctx, "panel", x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE)) {
+                ctx.fillStyle = "#1d2a33";
+                ctx.fillRect(x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE);
+                ctx.fillStyle = "#2f6f8f";
+                ctx.fillRect(x - BOMB_SIZE / 2 + 3, y - BOMB_SIZE + 3, BOMB_SIZE - 6, BOMB_SIZE * 0.4);
+                ctx.fillStyle = "#43586a";
+                for (let i = 0; i < 3; i++) ctx.fillRect(x - BOMB_SIZE / 2 + 3 + i * 8, y - BOMB_SIZE * 0.4, 6, 4);
+            }
+        } else if (!drawTexture(ctx, "bomb", x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE)) {
             ctx.fillStyle = "#1b1f24";
             ctx.beginPath();
             ctx.arc(x, y - BOMB_SIZE / 2 - 2, BOMB_SIZE / 2 - 3, 0, Math.PI * 2);

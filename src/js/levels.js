@@ -21,6 +21,11 @@
 //    spikes      opcjonalna lista kolców, np. spike(x, y) albo spike(x, y, 3) (patrz niżej)
 //    jumpPads    opcjonalna lista skoczni, np. jumpPad(x, y) albo jumpPad(x, y, 2, { power: 1.2 }) (patrz niżej)
 //    hp          opcjonalnie: życie gracza na tym poziomie (domyślnie PLAYER_MAX_HP w game.js = 3)
+//    mode        opcjonalnie: "bombs" (domyślnie: rozbrój wszystkie bomby i dojdź do drzwi po prawej) albo
+//                "panel" (skradanka: dokładnie jedna bomba = panel, wygrywasz po jego rozbrojeniu, pytania zawsze
+//                trudne; zauważenie przez przeciwnika włącza alarm i na mapę spadają spadochroniarze,
+//                ich liczbę ustawia pole paratroopers, domyślnie 14). Poziomy z panelem najwygodniej robić
+//                w edytorze (pole "Tryb") jako pliki JSON, patrz levelstore.js.
 //
 //  ZASIĘG SKOKU (żeby nie zrobić niemożliwego poziomu; gracz ma domyślnie 32 x 48 px = 1 x 1,5 tila)
 //    do góry ok. 74 px (2,3 tila), w poziomie ok. 110-156 px (zależnie od różnicy wysokości

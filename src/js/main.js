@@ -6,7 +6,13 @@ import { applyDomTextures } from "./textures.js";
 import { LEVELS } from "./levels.js";
 import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
 import { createEditor } from "./editor.js";
-import { loadJsonLevels, mergeJsonLevels, normalizeLevel } from "./levelstore.js";
+import { loadJsonLevels, mergeJsonLevels, normalizeLevel, PANEL_QUESTION_CATEGORY } from "./levelstore.js";
+import { loadStory, storyAfterLevel as storyEntryAfter } from "./story.js";
+
+// Ekrany fabuły (prolog, przerywniki po poziomach, epilog; teksty w src/data/story.json).
+// Ustaw false, żeby wyłączyć je w całości (np. na czas testowania poziomów).
+const STORY_ENABLED = true;
+const story = await loadStory();
 
 // Poziomy z plików JSON (wszystkie *.json z src/data/levels/) dochodzą po poziomach z levels.js;
 // poziom JSON o tej samej nazwie co poziom z kodu zastępuje go.
@@ -82,7 +88,9 @@ function buildLevelList() {
 
         const info = document.createElement("span");
         info.className = "level-card__info";
-        info.textContent = `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
+        info.textContent = level.mode === "panel"
+            ? `Panel · skradanka · ${formatTime(level.timeLimit)}`
+            : `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
 
         card.append(thumb, name, subtitle, info);
         levelList.append(card);
@@ -103,6 +111,9 @@ const loseReason = document.querySelector("#lose-reason");
 const winSummary = document.querySelector("#win-summary");
 const winTime = document.querySelector("#win-time");
 const winNext = document.querySelector("#win-next");
+const storyTitle = document.querySelector("#story-title");
+const storyText = document.querySelector("#story-text");
+const storyImage = document.querySelector("#story-image");
 const LETTERS = ["A", "B", "C"];
 
 // Zła odpowiedź przy bombie zabiera tyle sekund z timera poziomu (a nie kończy gry). Zła odpowiedź
@@ -118,6 +129,7 @@ const wrongAnswers = new Map(); // klucz bomby -> zbiór indeksów odpowiedzi, k
 // "bomb"    - okno z pytaniem przy bombie (czas leci dalej)
 // "lost"    - ekran przegranej
 // "won"     - ekran wygranej
+// "story"   - ekran fabuły (prolog, przerywnik między poziomami, epilog)
 
 let state = "menu";
 let debug = false;      // tryb debug włączany klawiszem "/"
@@ -135,12 +147,14 @@ const SCREEN_FOR_STATE = {
     bomb: "bomb",
     lost: "lose",
     won: "win",
+    story: "story",
 };
 
 const menu = createMenu({
-    play: (data) => startGame(Number(data.level)),       // karta poziomu w menu głównym
+    play: (data) => playFromMenu(Number(data.level)),    // karta poziomu w menu głównym
     retry: () => startGame(currentLevel),                // "Spróbuj ponownie" po przegranej
-    next: () => startGame(currentLevel + 1),             // "Następny poziom" po wygranej
+    next: nextAfterWin,                                  // "Następny poziom" po wygranej
+    "story-next": finishStory,                           // "Dalej" na ekranie fabuły
     resume: resumeGame,
     quit: quitToMenu,
     answer: (data) => answerBomb(Number(data.index)),
@@ -152,7 +166,7 @@ function setState(next) {
     document.body.dataset.state = next; // używa tego CSS (np. do panelu sterowania w rogu)
 
     // Rozszerzamy viewport tylko podczas rozgrywki i ekranów w jej trakcie.
-    const gameIsActive = ["playing", "paused", "bomb", "lost", "won"].includes(next);
+    const gameIsActive = ["playing", "paused", "bomb", "lost", "won", "story"].includes(next);
     document.body.classList.toggle("game-active", gameIsActive);
     // Kursor jest ukryty tylko, gdy naprawdę grasz.
     document.body.classList.toggle("cursor-hidden", next === "playing");
@@ -213,6 +227,56 @@ function endEditorTest() {
     setQuitLabels();
     setState("editor");
     editor.resume();
+}
+
+// ---------- Fabuła ----------
+// Ekran fabuły pokazuje wpis ze story.json, a po kliknięciu "Dalej" (albo Enter / Esc) wykonuje `then`.
+let storyThen = null;
+
+function showStory(entry, then) {
+    storyThen = then;
+    storyTitle.textContent = entry.title;
+    storyText.textContent = entry.text;
+    storyImage.classList.toggle("has-image", Boolean(entry.image));
+    if (entry.image) {
+        storyImage.style.setProperty("--texture", `url("${new URL(entry.image, document.baseURI).href}")`);
+        storyImage.style.setProperty("--texture-size", "cover");
+    } else {
+        storyImage.style.removeProperty("--texture");
+    }
+    setState("story");
+}
+
+function finishStory() {
+    if (state !== "story") return;
+    const then = storyThen;
+    storyThen = null;
+    then?.();
+}
+
+// Który wpis fabuły pokazać po ukończeniu aktualnego poziomu (przed następnym albo jako epilog).
+function storyAfterLevel() {
+    if (!STORY_ENABLED || testingFromEditor) return null;
+    const hasNext = currentLevel + 1 < LEVELS.length;
+    return (hasNext ? storyEntryAfter(story, currentLevel) : story.epilogue) ?? null;
+}
+
+// Karta poziomu w menu głównym: przy starcie od pierwszego poziomu najpierw prolog.
+function playFromMenu(levelIndex) {
+    if (STORY_ENABLED && levelIndex === 0 && story.prologue) {
+        showStory(story.prologue, () => startGame(0));
+    } else {
+        startGame(levelIndex);
+    }
+}
+
+// "Następny poziom" po wygranej: przerywnik fabularny, potem kolejny poziom (po ostatnim: epilog i menu).
+function nextAfterWin() {
+    const hasNext = currentLevel + 1 < LEVELS.length;
+    const entry = storyAfterLevel();
+    const proceed = () => (hasNext ? startGame(currentLevel + 1) : quitToMenu());
+    if (entry) showStory(entry, proceed);
+    else if (hasNext) proceed();
 }
 
 // Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
@@ -309,13 +373,18 @@ document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // ---------- Bomby, wygrana i przegrana ----------
 
+// Kategoria pytań poziomu: poziomy z panelem (mode "panel") zawsze losują trudne.
+function questionCategoryFor(level) {
+    return level.mode === "panel" ? PANEL_QUESTION_CATEGORY : level.questionCategory;
+}
+
 // Otwiera okno z pytaniem dla bomby (E przy bombie).
 function openBomb(bomb) {
     if (!bomb || bomb.defused) return;
     const bombKey = `${currentLevel}:${bomb.id}`;
     let question = assignedQuestions.get(bombKey);
     if (!question) {
-        question = questionQueues[LEVELS[currentLevel].questionCategory].next();
+        question = questionQueues[questionCategoryFor(LEVELS[currentLevel])].next();
         assignedQuestions.set(bombKey, question);
     }
     activeBomb = bomb;
@@ -367,11 +436,15 @@ function loseGame(reason) {
 function winGame() {
     const hasNext = currentLevel + 1 < LEVELS.length;
     const name = LEVELS[currentLevel].name;
+    const panel = LEVELS[currentLevel].mode === "panel";
     winSummary.textContent = hasNext
-        ? `${name} ukończony! Wszystkie bomby rozbrojone.`
+        ? `${name} ukończony! ${panel ? "Panel rozbrojony." : "Wszystkie bomby rozbrojone."}`
         : `${name} ukończony! To był ostatni poziom, gratulacje!`;
     winTime.textContent = `Pozostały czas: ${formatTime(game.timeLeft)}`;
-    winNext.hidden = !hasNext;
+    // Po ostatnim poziomie przycisk prowadzi do epilogu (o ile jest); inaczej go nie ma.
+    const epilogue = !hasNext && storyAfterLevel() !== null;
+    winNext.hidden = !hasNext && !epilogue;
+    winNext.textContent = hasNext ? "Następny poziom" : "Epilog";
     setState("won");
 }
 
@@ -403,6 +476,7 @@ function frame(now) {
     if (input.escapePressed() && performance.now() >= ignoreEscapeUntil) {
         if (state === "playing" || state === "bomb") pauseGame();
         else if (state === "paused") resumeGame();
+        else if (state === "story") finishStory();
     }
 
     if (state === "playing") {
@@ -423,7 +497,8 @@ function frame(now) {
 
         if (state === "playing") game.resolveEnemyAttack();
 
-        if (state === "playing" && game.allDefused() && game.atRightEdge()) winGame();
+        // Tryb "bombs": rozbrojone wszystkie bomby i dojście do drzwi po prawej. Tryb "panel": wystarczy rozbrojony panel.
+        if (state === "playing" && game.allDefused() && (game.mode === "panel" || game.atRightEdge())) winGame();
 
         // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
         // tylko cofają gracza do checkpointu (patrz game.js).
@@ -444,7 +519,7 @@ function frame(now) {
 
     // Koniec czasu = przegrana (także podczas pytania).
     if ((state === "playing" || state === "bomb") && !game.allDefused() && game.timeLeft <= 0) {
-        loseGame("Czas minął! Bomby wybuchły.");
+        loseGame(game.mode === "panel" ? "Czas minął! Panel nie został rozbrojony." : "Czas minął! Bomby wybuchły.");
     }
 
     input.endFrame();

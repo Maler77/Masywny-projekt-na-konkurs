@@ -23,6 +23,10 @@
 //  FORMAT PLIKU (wszystkie współrzędne w pikselach gry, 1 tile = 32 px, patrz levels.js):
 //    name, subtitle, questionCategory ("easy" | "medium" | "hard"), background (lista tekstur tła),
 //    timeLimit (s), width, height, hp (opcjonalnie), spawn { x, y }   (x = środek, y = pod stopami)
+//    mode       "bombs" (domyślnie: rozbrój wszystkie bomby i dojdź do drzwi na prawym końcu) albo
+//               "panel" (skradanka: jedna "bomba" to panel, wygrywasz po jego rozbrojeniu; zauważenie przez
+//               strażnika włącza alarm i spadają spadochroniarze; pytania zawsze trudne = "hard")
+//    paratroopers  tylko w trybie "panel": ilu przeciwników spada po alarmie (domyślnie 14)
 //    platforms  [{ x, y, w, h, texture, textureMode?, solid?, oneWay?, grappleable? }]
 //    bombs      [{ x, y }]                                              (x = środek, y = podłoże)
 //    enemies    [{ type: "weak" | "strong", x, y, direction?, speed?, area?: { x1, y1, x2, y2 } }]
@@ -42,6 +46,8 @@ const DRAFTS_KEY = "masywny.editor.drafts";
 const AUTOSAVE_KEY = "masywny.editor.autosave";
 
 export const QUESTION_CATEGORIES = ["easy", "medium", "hard"];
+export const LEVEL_MODES = ["bombs", "panel"];
+export const PANEL_QUESTION_CATEGORY = "hard"; // poziomy z panelem zawsze losują pytania trudne
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
@@ -77,6 +83,11 @@ export function serializeLevel(level) {
     };
     if (isNumber(level.hp)) out.hp = level.hp;
     if (level.thumbnail) out.thumbnail = level.thumbnail;
+    if (level.mode === "panel") {
+        out.mode = "panel";
+        out.questionCategory = PANEL_QUESTION_CATEGORY;
+        if (isNumber(level.paratroopers)) out.paratroopers = level.paratroopers;
+    }
     out.spawn = { x: level.spawn.x, y: level.spawn.y };
 
     out.platforms = (level.platforms ?? []).map((p) => {
@@ -116,6 +127,10 @@ export function normalizeLevel(raw) {
 
     need(typeof raw.name === "string" && raw.name.trim() !== "", "brak pola name");
     need(QUESTION_CATEGORIES.includes(raw.questionCategory ?? "easy"), "questionCategory musi być easy, medium albo hard");
+    const mode = raw.mode ?? "bombs";
+    need(LEVEL_MODES.includes(mode), 'mode musi być "bombs" albo "panel"');
+    need(raw.paratroopers === undefined || (Number.isInteger(raw.paratroopers) && raw.paratroopers >= 1 && raw.paratroopers <= 60),
+        "paratroopers musi być liczbą całkowitą od 1 do 60");
     need(isNumber(raw.timeLimit ?? 60) && (raw.timeLimit ?? 60) > 0, "timeLimit musi być liczbą większą od 0");
     need(isNumber(raw.width) && raw.width > 0, "width musi być liczbą większą od 0");
     need(isNumber(raw.spawn?.x) && isNumber(raw.spawn?.y), "spawn musi mieć x i y");
@@ -164,11 +179,15 @@ export function normalizeLevel(raw) {
         return { ...e };
     });
 
+    // Panel to dokładnie jedna "bomba" i zawsze trudne pytania.
+    if (mode === "panel") need(bombs.length === 1, `poziom z panelem musi mieć dokładnie 1 bombę (panel), a ma ${bombs.length}`);
+
     const level = {
         ...raw,
         name: raw.name,
         subtitle: raw.subtitle ?? "",
-        questionCategory: raw.questionCategory ?? "easy",
+        mode,
+        questionCategory: mode === "panel" ? PANEL_QUESTION_CATEGORY : (raw.questionCategory ?? "easy"),
         background: raw.background ?? ["background"],
         timeLimit: raw.timeLimit ?? 60,
         width: raw.width,
@@ -181,6 +200,7 @@ export function normalizeLevel(raw) {
         jumpPads,
     };
     if (!isNumber(level.hp)) delete level.hp;
+    if (mode !== "panel") delete level.paratroopers;
     return level;
 }
 

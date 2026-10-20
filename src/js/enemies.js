@@ -30,6 +30,13 @@ import { SCALE } from "./config.js";
 //             false = stożek zawsze patrzy poziomo przed siebie (gracz może uciec kątem, np. skokiem).
 //  Ściany zasłaniają widok: stożek jest przycinany przez solidne platformy.
 //
+//  SPADOCHRONIARZE I ŁOWCY (tryb poziomu "panel", patrz game.js)
+//    Po alarmie na mapę spadają przeciwnicy na spadochronach (state "falling"): opadają ze stałą
+//    prędkością PARATROOPER_FALL_SPEED, nie rażą, nie da się ich zakuć i nic nie widzą, dopóki nie wylądują.
+//    Po wylądowaniu stają się zwykłymi aktywnymi przeciwnikami i od razu gonią gracza.
+//    hunter: true  "łowca" zawsze wie, gdzie jest gracz (nie potrzebuje pola widzenia), dopóki nie wejdzie
+//                  w chmurę dymu (oślepiony traci gracza z oczu jak każdy inny przeciwnik).
+//
 //  OBSZAR RUCHU (area) przy tworzeniu przeciwnika w levels.js:
 //    enemy("weak", x, y, { area: { x1, y1, x2, y2 } })   dwa przeciwległe rogi prostokąta (w px poziomu)
 //  Domyślnie obszarem jest platforma, na której przeciwnik stoi, więc nigdy z niej nie schodzi.
@@ -41,6 +48,7 @@ import { SCALE } from "./config.js";
 export const ALERT_TURN_DELAY = 0.5;  // po dotknięciu od tyłu: tyle czeka, zanim się odwróci
 export const SEARCH_TIME = 2;         // tyle czeka na gracza, zanim się odwróci i wróci do patrolu
 export const EXCLAIM_TIME = 1;        // jak długo widać "!" nad głową
+export const PARATROOPER_FALL_SPEED = 36 * SCALE; // opadanie na spadochronie (px/s)
 
 // Definicje typów. Add new enemy behavior by registering another type here and listing the
 // methods that are allowed to cuff it.
@@ -75,7 +83,8 @@ export const ENEMY_TYPES = Object.freeze({
 
 // Level coordinates use the same anchor as the player and bombs: x is the center,
 // y is the floor under the enemy's feet.
-// Opcje: id, direction (1 / -1), speed, chaseSpeed, area { x1, y1, x2, y2 }, vision { angle, length, offsetX, offsetY, alpha, track }.
+// Opcje: id, direction (1 / -1), speed, chaseSpeed, area { x1, y1, x2, y2 }, vision { angle, length, offsetX, offsetY, alpha, track },
+// hunter (zawsze zna położenie gracza), paratrooper (przeciwnik z alarmu), state ("falling" = opada na spadochronie).
 export function createEnemy(data, index = 0) {
     const definition = ENEMY_TYPES[data.type];
     if (!definition) throw new Error(`Unknown enemy type: ${data.type}`);
@@ -88,8 +97,11 @@ export function createEnemy(data, index = 0) {
         y: data.y - definition.height,
         w: definition.width,
         h: definition.height,
-        state: "active",
+        state: data.state ?? "active",
         cuffedBy: null,
+        hunter: Boolean(data.hunter),
+        paratrooper: Boolean(data.paratrooper),
+        fallTime: 0,                 // jak długo opada na spadochronie (do kołysania spadochronu)
         direction: data.direction ?? 1,
         speed,
         chaseSpeed: data.chaseSpeed ?? speed * definition.chaseMultiplier,
@@ -305,7 +317,8 @@ function think(enemy, world, dt) {
     } else {
         enemy.aim = null;
     }
-    const sees = canEnemySee(enemy, player, platforms);
+    // Łowca zna położenie gracza bez pola widzenia (chyba że jest oślepiony dymem).
+    const sees = (enemy.hunter && !enemy.blind) || canEnemySee(enemy, player, platforms);
     ai.sees = sees;
 
     const startChase = () => {
@@ -478,9 +491,31 @@ function physics(enemy, command, world, dt) {
     }
 }
 
+// Spadochroniarz wylądował: staje się aktywnym przeciwnikiem i biegnie w stronę gracza.
+function landParatrooper(enemy, world) {
+    const px = world.player.x + world.player.w / 2;
+    enemy.state = "active";
+    enemy.facing = px >= enemy.x + enemy.w / 2 ? 1 : -1;
+    enemy.direction = enemy.facing;
+    enemy.ai = { mode: "chase", timer: SEARCH_TIME, lastSeenX: px, sees: false };
+    enemy.exclaim = 0;
+}
+
 // Jedna klatka przeciwnika. world = { platforms, player, gravity, maxFall, smokes }.
 export function updateEnemy(enemy, world, dt) {
     if (!enemy.area) initEnemyArea(enemy, world.platforms);
+
+    if (enemy.state === "falling") {
+        // Opada ze stałą prędkością (bez grawitacji), aż stanie na platformie albo na dole poziomu.
+        enemy.fallTime += dt;
+        enemy.blind = false;
+        enemy.vy = PARATROOPER_FALL_SPEED;
+        physics(enemy, { move: 0, speed: 0, allowDrop: false },
+            { ...world, gravity: 0, maxFall: PARATROOPER_FALL_SPEED }, dt);
+        if (enemy.onGround) landParatrooper(enemy, world);
+        return;
+    }
+
     enemy.blind = world.smokes ? isBlinded(enemy, world.smokes) : false;
     enemy.exclaim = Math.max(0, enemy.exclaim - dt);
     const command = enemy.state === "active"

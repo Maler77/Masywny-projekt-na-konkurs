@@ -55,6 +55,13 @@ const SMOKE_SHOT_SIZE = 4 * SCALE;         // rozmiar pocisku (8 px)
 const JUMP_PAD_SPEED = 320 * SCALE;
 const JUMP_PAD_SQUASH_TIME = 0.18;         // jak długo skocznia jest "ściśnięta" po odbiciu (tylko wygląd)
 
+// Tryb poziomu "panel" (skradanka): jeden panel do rozbrojenia. Gdy którykolwiek strażnik zauważy gracza,
+// włącza się alarm i na całej mapie spada kilkunastu przeciwników na spadochronach (patrz triggerAlarm()).
+const PARATROOPERS_DEFAULT = 14;               // ilu spadochroniarzy spada po alarmie (pole `paratroopers` w poziomie)
+const PARATROOPER_STRONG_EVERY = 4;            // co który spadochroniarz jest silny (pozostali są słabi)
+const PARATROOPER_SPAWN_MIN = 12 * SCALE;      // start nad górną krawędzią poziomu: od tylu px ...
+const PARATROOPER_SPAWN_SPREAD = 40 * SCALE;   // ... do tylu px więcej (różne momenty lądowania)
+
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
 const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
 const WALL_KICK_SPEED = 100 * SCALE;     // prędkość pozioma odbicia (od ściany)
@@ -200,6 +207,8 @@ export function createGame(initialLevel) {
     let smokeCooldown = 0;
     let smokeNoTarget = 0;
     let jumpPads = [];
+    let mode = "bombs";                   // "bombs" = rozbrój bomby i dojdź do wyjścia, "panel" = jeden panel, skradanka
+    let alarm = { active: false, time: 0 }; // alarm w trybie "panel" (time = sekundy od włączenia)
     let penalty = { amount: 0, time: 0 }; // ostatnia kara czasowa (do wyświetlenia w HUD)
 
     // Animacje gracza (sprite sheet z animations.js).
@@ -281,6 +290,12 @@ export function createGame(initialLevel) {
         animator.update(dt);
     }
 
+    // Tekstura bomby: w trybie "panel" ta sama bomba jest panelem (panel / panelDefused w textures.js).
+    function bombTexture(defused) {
+        if (mode === "panel") return defused ? "panelDefused" : "panel";
+        return defused ? "bombDefused" : "bomb";
+    }
+
     // Wczytuje poziom z levels.js i ustawia grę od początku.
     function loadLevel(next) {
         level = next;
@@ -290,6 +305,7 @@ export function createGame(initialLevel) {
         levelHeight = next.height ?? VIEW_HEIGHT;
         timeLimit = next.timeLimit;
         spawn = next.spawn ?? { x: 32 * SCALE, y: 160 * SCALE };
+        mode = next.mode ?? "bombs";
 
         // Pozycja bomby w danych to jej dolny środek: bomba startuje jako punkt w tym miejscu,
         // a syncSize() nadaje jej rozmiar hitboxa i obrazka, zachowując ten dolny środek.
@@ -303,7 +319,7 @@ export function createGame(initialLevel) {
             sprite: BOMB_FALLBACK,
             hitOffsetX: 0,
             hitOffsetY: 0,
-            texture: "bomb",
+            texture: bombTexture(false),
             defused: false,
         }));
         enemies = (next.enemies ?? []).map(createEnemy);
@@ -350,9 +366,11 @@ export function createGame(initialLevel) {
     function reset() {
         for (const bomb of bombs) {
             bomb.defused = false;
-            bomb.texture = "bomb";
+            bomb.texture = bombTexture(false);
         }
+        enemies = enemies.filter((enemy) => !enemy.paratrooper); // spadochroniarze z alarmu znikają
         enemies.forEach(resetEnemy);
+        alarm = { active: false, time: 0 };
         checkpoint = { ...spawn };
         player.maxHp = level.hp ?? PLAYER_MAX_HP;
         player.hp = player.maxHp;
@@ -521,7 +539,7 @@ export function createGame(initialLevel) {
 
     function defuse(bomb) {
         bomb.defused = true;
-        bomb.texture = "bombDefused";
+        bomb.texture = bombTexture(true);
         // Rozbrojona bomba to nowy checkpoint: gracz wraca tu na środek, stopami na powierzchni bomby.
         checkpoint = { x: bomb.x + bomb.w / 2, y: bomb.y + bomb.h };
     }
@@ -709,6 +727,33 @@ export function createGame(initialLevel) {
         for (const enemy of enemies) updateEnemy(enemy, world, dt);
     }
 
+    // Alarm (tryb "panel"): na całej szerokości mapy zaczynają opadać przeciwnicy na spadochronach.
+    // Rozkładają się równo wzdłuż poziomu (z losowym przesunięciem), startują nad jego górną krawędzią
+    // na różnych wysokościach, więc lądują jeden po drugim. Po wylądowaniu są "łowcami": gonią gracza
+    // bez pola widzenia (oślepia ich tylko dym). Co PARATROOPER_STRONG_EVERY-ty jest silny.
+    function triggerAlarm() {
+        if (alarm.active) return;
+        alarm = { active: true, time: 0 };
+        const count = level.paratroopers ?? PARATROOPERS_DEFAULT;
+        const area = { x1: 0, y1: -1000 * SCALE, x2: levelWidth, y2: levelHeight };
+        const slot = levelWidth / count;
+        for (let i = 0; i < count; i++) {
+            const data = {
+                id: `spadochroniarz-${i + 1}`,
+                type: (i + 1) % PARATROOPER_STRONG_EVERY === 0 ? "strong" : "weak",
+                x: slot * (i + 0.15 + Math.random() * 0.7),
+                y: -(PARATROOPER_SPAWN_MIN + Math.random() * PARATROOPER_SPAWN_SPREAD), // y = stopy
+                state: "falling",
+                hunter: true,
+                paratrooper: true,
+                area,
+            };
+            const enemy = createEnemy(data, enemies.length);
+            initEnemyArea(enemy, platforms);
+            enemies.push(enemy);
+        }
+    }
+
     // Kontakt z aktywnym przeciwnikiem zabiera 1 HP, ale tylko gdy gracz jest PRZED nim (po stronie,
     // w którą patrzy). Od tyłu przeciwnik nie rani. Wyjątek: dash w słabego przeciwnika ma
     // pierwszeństwo (main.js kajdankuje go przed tym wywołaniem, a tu pomijamy go na wszelki wypadek).
@@ -849,6 +894,11 @@ export function createGame(initialLevel) {
         hurtFlash = Math.max(0, hurtFlash - dt);
         updateSmoke(dt, input);
         updateEnemies(dt);
+        if (mode === "panel") {
+            // Zauważenie gracza przez któregokolwiek strażnika (pościg) włącza alarm.
+            if (alarm.active) alarm.time += dt;
+            else if (enemies.some((enemy) => enemy.state === "active" && enemy.ai.mode === "chase")) triggerAlarm();
+        }
 
         grappleCooldown = Math.max(0, grappleCooldown - dt);
         for (const [target, remaining] of grappleTargetLocks) {
@@ -1145,12 +1195,73 @@ export function createGame(initialLevel) {
         });
     }
 
+    // Panel rozbrajania (tryb "panel") bez tekstury: obudowa z ekranem i klawiaturą. Ekran jest niebieski,
+    // podczas alarmu miga na czerwono, a po rozbrojeniu robi się zielony.
+    function drawPanelFallback(ctx, bomb, x, y, w, h) {
+        const u = (value) => Math.max(1, Math.round(value * SCALE));
+        const blink = Math.floor(timeLeft * 3) % 2 === 0;
+        ctx.fillStyle = "#1d2a33";
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#6b7c88";
+        ctx.fillRect(x, y, w, u(1));
+        ctx.fillRect(x, y + h - u(1), w, u(1));
+        ctx.fillRect(x, y, u(1), h);
+        ctx.fillRect(x + w - u(1), y, u(1), h);
+
+        ctx.fillStyle = bomb.defused ? "#1f8f62" : alarm.active ? (blink ? "#ff5a5a" : "#7a2630") : "#2f6f8f";
+        ctx.fillRect(x + u(2), y + u(2), w - u(4), Math.round(h * 0.4));
+
+        ctx.fillStyle = "#43586a";
+        const keyY = y + Math.round(h * 0.55);
+        for (let row = 0; row < 2; row++) {
+            for (let col = 0; col < 3; col++) {
+                ctx.fillRect(x + u(2) + col * u(4), keyY + row * u(3), u(3), u(2));
+            }
+        }
+        ctx.fillStyle = bomb.defused ? "#55e6ad" : blink ? "#ffd166" : "#6b5a2a";
+        ctx.fillRect(x + w - u(4), y + h - u(4), u(2), u(2));
+    }
+
+    // Spadochron nad opadającym przeciwnikiem: czerwono-biała czasza (rząd po rzędzie, żeby piksele były
+    // ostre) i dwie linki do ramion. Czasza lekko się kołysze.
+    function drawParachute(ctx, enemy) {
+        const u = (value) => Math.max(1, Math.round(value * SCALE));
+        const sway = Math.round(Math.sin(enemy.fallTime * 3) * u(2));
+        const rx = Math.round(enemy.w / 2 + u(7));
+        const height = u(9);
+        const cx = Math.round(enemy.x + enemy.w / 2) + sway;
+        const baseY = Math.round(enemy.y) - u(8);
+
+        ctx.strokeStyle = "#d8dde2";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - rx + 0.5, baseY);
+        ctx.lineTo(Math.round(enemy.x) + u(3) + 0.5, Math.round(enemy.y) + u(7));
+        ctx.moveTo(cx + rx - 0.5, baseY);
+        ctx.lineTo(Math.round(enemy.x + enemy.w) - u(3) + 0.5, Math.round(enemy.y) + u(7));
+        ctx.stroke();
+
+        for (let i = 0; i < height; i++) {
+            const half = Math.round(rx * Math.sqrt(1 - (i / height) ** 2));
+            const rowY = baseY - i - 1;
+            ctx.fillStyle = "#d94f4f";
+            ctx.fillRect(cx - half, rowY, half * 2, 1);
+            const stripe = Math.min(half, Math.round(rx / 3));
+            ctx.fillStyle = "#f2ead1";
+            ctx.fillRect(cx - stripe, rowY, stripe * 2, 1);
+        }
+    }
+
     // Bomba: teksturą, a bez niej prosty kształt z pikseli (kula z lontem, po rozbrojeniu zielona).
     function drawBomb(ctx, bomb) {
         const r = spriteRect(bomb);
         const x = Math.round(r.x);
         const y = Math.round(r.y);
         if (drawTexture(ctx, bomb.texture, x, y, r.w, r.h)) return;
+        if (mode === "panel") {
+            drawPanelFallback(ctx, bomb, x, y, r.w, r.h);
+            return;
+        }
 
         const cx = x + Math.round(r.w / 2);
         const cy = y + Math.round(r.h / 2) + SCALE;
@@ -1192,6 +1303,8 @@ export function createGame(initialLevel) {
             ctx.fillRect(x + w - u(7), bodyY + u(1), u(2), u(2));
             return;
         }
+
+        if (state === "falling") drawParachute(ctx, enemy);
 
         const appearance = ENEMY_TYPES[type];
         const inset = u(appearance.armored ? 4 : 3);
@@ -1266,7 +1379,7 @@ export function createGame(initialLevel) {
             color = "#a4f1dc";
         } else if (bomb) {
             target = bomb;
-            text = "E: rozbrój";
+            text = mode === "panel" ? "E: rozbrój panel" : "E: rozbrój";
             color = "#ffe08a";
         } else if (grapple) {
             target = grapple;
@@ -1602,7 +1715,26 @@ export function createGame(initialLevel) {
 
         ctx.font = `${6 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.9)";
-        ctx.fillText(`Bomby: ${defusedCount()}/${bombs.length}`, VIEW_WIDTH - 8 * SCALE, 26 * SCALE);
+        ctx.fillText(
+            mode === "panel" ? `Panel: ${defusedCount()}/${bombs.length}` : `Bomby: ${defusedCount()}/${bombs.length}`,
+            VIEW_WIDTH - 8 * SCALE, 26 * SCALE,
+        );
+
+        // Alarm: pulsująca czerwona ramka ekranu i napis u góry.
+        if (alarm.active) {
+            const pulse = 0.5 + 0.5 * Math.sin(alarm.time * 8);
+            ctx.fillStyle = `rgba(255, 60, 60, ${0.14 + 0.16 * pulse})`;
+            const edge = 5 * SCALE;
+            ctx.fillRect(0, 0, VIEW_WIDTH, edge);
+            ctx.fillRect(0, VIEW_HEIGHT - edge, VIEW_WIDTH, edge);
+            ctx.fillRect(0, 0, edge, VIEW_HEIGHT);
+            ctx.fillRect(VIEW_WIDTH - edge, 0, edge, VIEW_HEIGHT);
+            ctx.textAlign = "center";
+            ctx.font = `700 ${10 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+            ctx.fillStyle = `rgba(255, 110, 110, ${0.65 + 0.35 * pulse})`;
+            ctx.fillText("ALARM!", VIEW_WIDTH / 2, 18 * SCALE);
+            ctx.textAlign = "right";
+        }
 
         // Kara czasowa (np. zła odpowiedź): czerwony napis pod timerem przez chwilę.
         if (penalty.time > 0) {
@@ -1612,6 +1744,24 @@ export function createGame(initialLevel) {
             ctx.fillText(`−${penalty.amount} s`, VIEW_WIDTH - 8 * SCALE, 38 * SCALE);
             ctx.globalAlpha = 1;
         }
+    }
+
+    // Wyjście na prawym końcu poziomu (tryb "bombs"). Zapala się, gdy wszystkie bomby są rozbrojone.
+    function drawExit(ctx) {
+        const exitWidth = 28 * SCALE;
+        const exitHeight = 48 * SCALE;
+        const exitX = levelWidth - exitWidth;
+        const exitY = levelHeight - 1.25 * TILE - exitHeight;
+        const exitActive = allDefused();
+        ctx.fillStyle = exitActive ? "rgba(69, 224, 164, 0.28)" : "rgba(110, 130, 145, 0.18)";
+        ctx.fillRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.strokeStyle = exitActive ? "#55e6ad" : "#74838d";
+        ctx.lineWidth = 3 * SCALE;
+        ctx.strokeRect(exitX, exitY, exitWidth, exitHeight);
+        ctx.fillStyle = exitActive ? "#b9ffe0" : "#aab4bd";
+        ctx.font = `700 ${8 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText("EXIT", exitX + exitWidth / 2, exitY + exitHeight / 2 + 3 * SCALE);
     }
 
     // Rysowanie. Tylko odczytuje stan, niczego nie zmienia.
@@ -1653,21 +1803,7 @@ export function createGame(initialLevel) {
             }
         }
 
-        // Exit at the far-right edge. It lights up when every bomb is defused.
-        const exitWidth = 28 * SCALE;
-        const exitHeight = 48 * SCALE;
-        const exitX = levelWidth - exitWidth;
-        const exitY = levelHeight - 1.25 * TILE - exitHeight;
-        const exitActive = allDefused();
-        ctx.fillStyle = exitActive ? "rgba(69, 224, 164, 0.28)" : "rgba(110, 130, 145, 0.18)";
-        ctx.fillRect(exitX, exitY, exitWidth, exitHeight);
-        ctx.strokeStyle = exitActive ? "#55e6ad" : "#74838d";
-        ctx.lineWidth = 3 * SCALE;
-        ctx.strokeRect(exitX, exitY, exitWidth, exitHeight);
-        ctx.fillStyle = exitActive ? "#b9ffe0" : "#aab4bd";
-        ctx.font = `700 ${8 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
-        ctx.textAlign = "center";
-        ctx.fillText("EXIT", exitX + exitWidth / 2, exitY + exitHeight / 2 + 3 * SCALE);
+        if (mode !== "panel") drawExit(ctx); // w trybie "panel" nie ma drzwi: wygrywasz po rozbrojeniu panelu
 
         for (const spike of spikes) drawSpike(ctx, spike);
         for (const pad of jumpPads) drawJumpPad(ctx, pad);
@@ -1755,6 +1891,10 @@ export function createGame(initialLevel) {
         defuse,
         allDefused,
         atRightEdge: () => player.x + player.w >= levelWidth - 1,
+        // Tryb poziomu ("bombs" albo "panel") i alarm (tylko do odczytu; triggerAlarm służy też testom).
+        get mode() { return mode; },
+        get alarm() { return { ...alarm }; },
+        triggerAlarm,
         get level() { return level; },
         get timeLeft() { return timeLeft; },
         get hp() { return player.hp; },

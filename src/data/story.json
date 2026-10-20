@@ -1,0 +1,32 @@
+{
+    "prologue": {
+        "title": "Prolog",
+        "text": "[Tu pojawi się fabuła przed pierwszym poziomem.]\n\nKilka zdań wprowadzenia: kim jest bohater, co się stało i dlaczego musi działać."
+    },
+    "afterLevel": [
+        {
+            "title": "Rozdział 1",
+            "text": "[Fabuła po poziomie 1.]\n\nCo bohater odkrył i dokąd idzie dalej."
+        },
+        {
+            "title": "Rozdział 2",
+            "text": "[Fabuła po poziomie 2.]\n\nCo bohater odkrył i dokąd idzie dalej."
+        },
+        {
+            "title": "Rozdział 3",
+            "text": "[Fabuła po poziomie 3.]\n\nCo bohater odkrył i dokąd idzie dalej."
+        },
+        {
+            "title": "Rozdział 4",
+            "text": "[Fabuła po poziomie 4.]\n\nCo bohater odkrył i dokąd idzie dalej."
+        },
+        {
+            "title": "Rozdział 5",
+            "text": "[Fabuła przed walką z bossem.]\n\nOstatnie przygotowania przed finałem."
+        }
+    ],
+    "epilogue": {
+        "title": "Epilog",
+        "text": "[Tu pojawi się zakończenie historii.]"
+    }
+}

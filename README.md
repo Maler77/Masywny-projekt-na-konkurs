@@ -167,3 +167,19 @@ All question content is in `src/data/questions.json`, grouped under `categories.
 Add each question object to the array for its category. Give it a unique, non-empty `id` across the whole file, write its `question`, provide exactly three non-empty strings in `answers`, and set `correctAnswer` to the correct answer's zero-based position: `0` for the first answer, `1` for the second, or `2` for the third. When adding another object, put a comma after the previous object, but not after the final object in that category. Keep the file valid JSON and each category non-empty.
 
 The game validates the file at startup and reports a clear error in the browser console if it cannot be loaded or any question is malformed. Run the local HTTP server described above so the browser can fetch the JSON file.
+## Typy poziomów
+
+Typ poziomu ustawia pole `mode` (w pliku JSON albo w edytorze, pole „Tryb”). Poziomy bez tego pola działają jak dotąd.
+
+- **`"bombs"` (domyślny): bomby + drzwi.** Rozbrój wszystkie bomby (każda to pytanie z kategorii `questionCategory`), potem dojdź do drzwi „EXIT” na prawym końcu poziomu. Po rozbrojeniu ostatniej bomby timer się zatrzymuje.
+- **`"panel"`: skradanka z jednym panelem.** Poziom ma dokładnie jedną „bombę” i jest ona panelem rozbrajania. Trzeba do niego podejść niezauważonym; wygrywasz od razu po poprawnej odpowiedzi (bez drzwi). Pytania są **zawsze trudne** (`hard`), niezależnie od `questionCategory`. Gdy którykolwiek przeciwnik zauważy gracza (przejdzie w pościg), włącza się **alarm**: na całej szerokości mapy zaczyna opadać na spadochronach kilkunastu przeciwników (pole `paratroopers`, domyślnie 14, co czwarty jest silny). Opadają ok. 3-6 s, nie rażą i nie widać ich pól widzenia, dopóki nie wylądują. Po wylądowaniu są „łowcami”: gonią gracza bez pola widzenia (oślepia ich tylko dym, klawisz F). Po utracie HP alarm trwa dalej, a restart poziomu go wyłącza.
+
+Wskazówki do projektowania poziomu z panelem: pole widzenia przeciwnika sięga tylko do przodu i jest zasłaniane przez solidne platformy, więc od tyłu można podejść i zakuć go (E, silnego tylko od tyłu), a platforma pod graczem całkowicie chroni go przed strażnikami pod nią. Przykłady w `src/data/levels/poziom-5-panel.json` (górna ścieżka nad strażnikami) i `poziom-6-panel.json` (trzy piętra połączone skoczniami).
+
+W edytorze po wybraniu trybu „Panel” zostaje jedna bomba (nowa zastępuje starą), pole „Pytania” znika (zawsze trudne), a pojawia się „Spadochroniarze”.
+
+## Fabuła między poziomami
+
+Teksty ekranów fabularnych są w `src/data/story.json`: `prologue` (przed pierwszym poziomem), `afterLevel` (lista; `afterLevel[0]` pokazuje się po 1. poziomie, `[1]` po 2. itd., w kolejności poziomów w menu) i `epilogue` (po ostatnim poziomie). Każdy wpis to `{ "title": "...", "text": "...", "image": "assets/story/cos.png" }`; `title` i `image` są opcjonalne (bez `image` widać ramkę „miejsce na ilustrację”), a `\n\n` w `text` oddziela akapity. Wpisy w pliku to na razie placeholdery. Jeśli poziomów jest więcej niż wpisów w `afterLevel`, brakujące przerywniki dostają automatyczny placeholder „Rozdział N”; wpis `null` wyłącza przerywnik po danym poziomie. Przerywnik pokazuje się po kliknięciu „Następny poziom” na ekranie wygranej, a po ostatnim poziomie przycisk „Epilog” prowadzi do epilogu i menu. Prolog pojawia się po wybraniu karty pierwszego poziomu z menu. Całą fabułę wyłączysz stałą `STORY_ENABLED` na górze `src/js/main.js`. Ekran fabuły ma tło `storyBackground` i ramkę `storyImage` w `textures.js`.
+
+Docelowa kolejność (3 poziomy z bombami, 2 z panelem, boss) wynika z kolejności w menu: najpierw poziomy z `levels.js`, potem pliki JSON po nazwie pliku. Żeby ustawić kolejność, nazywaj pliki tak, by sortowały się po kolei (np. `01-…json`, `02-…json`).

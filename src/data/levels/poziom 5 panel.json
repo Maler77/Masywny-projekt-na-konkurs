@@ -1,0 +1,124 @@
+{
+    "name": "Poziom 5",
+    "subtitle": "Cicha noc",
+    "questionCategory": "hard",
+    "mode": "panel",
+    "paratroopers": 14,
+    "background": [
+        "background"
+    ],
+    "timeLimit": 100,
+    "width": 1600,
+    "height": 360,
+    "spawn": {
+        "x": 64,
+        "y": 320
+    },
+    "platforms": [
+        {
+            "x": 0,
+            "y": 320,
+            "w": 1600,
+            "h": 40,
+            "texture": "ground"
+        },
+        {
+            "x": 224,
+            "y": 192,
+            "w": 400,
+            "h": 24,
+            "texture": "platform"
+        },
+        {
+            "x": 688,
+            "y": 192,
+            "w": 432,
+            "h": 24,
+            "texture": "platform"
+        },
+        {
+            "x": 1184,
+            "y": 192,
+            "w": 416,
+            "h": 24,
+            "texture": "platform"
+        }
+    ],
+    "bombs": [
+        {
+            "x": 1560,
+            "y": 192
+        }
+    ],
+    "enemies": [
+        {
+            "type": "weak",
+            "x": 900,
+            "y": 192,
+            "id": "gora-1",
+            "area": {
+                "x1": 704,
+                "y1": 0,
+                "x2": 1104,
+                "y2": 192
+            }
+        },
+        {
+            "type": "strong",
+            "x": 1440,
+            "y": 192,
+            "id": "gora-2",
+            "area": {
+                "x1": 1380,
+                "y1": 0,
+                "x2": 1500,
+                "y2": 192
+            }
+        },
+        {
+            "type": "weak",
+            "x": 560,
+            "y": 320,
+            "id": "dol-1",
+            "area": {
+                "x1": 420,
+                "y1": 100,
+                "x2": 700,
+                "y2": 320
+            }
+        },
+        {
+            "type": "weak",
+            "x": 900,
+            "y": 320,
+            "id": "dol-2",
+            "area": {
+                "x1": 780,
+                "y1": 100,
+                "x2": 1060,
+                "y2": 320
+            }
+        },
+        {
+            "type": "strong",
+            "x": 1350,
+            "y": 320,
+            "id": "dol-3",
+            "area": {
+                "x1": 1200,
+                "y1": 100,
+                "x2": 1500,
+                "y2": 320
+            }
+        }
+    ],
+    "spikes": [],
+    "jumpPads": [
+        {
+            "x": 160,
+            "y": 312,
+            "w": 32,
+            "h": 8
+        }
+    ]
+}
