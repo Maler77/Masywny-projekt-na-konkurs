@@ -37,6 +37,13 @@ import { SCALE } from "./config.js";
 //    hunter: true  "łowca" zawsze wie, gdzie jest gracz (nie potrzebuje pola widzenia), dopóki nie wejdzie
 //                  w chmurę dymu (oślepiony traci gracza z oczu jak każdy inny przeciwnik).
 //
+//  KAMIKAZE (boss, tryb poziomu "boss", patrz game.js)
+//    Typ "kamikaze" to łowca (hunter): zawsze wie, gdzie jest gracz (oślepia go tylko dym), biegnie za nim
+//    nieco wolniej, niż biega gracz, i skacze przez przeszkody oraz w stronę gracza, który jest nad nim
+//    (jumpSpeed w ENEMY_TYPES). Nie da się go zakuć. Zbliżenie się do niego uruchamia zapalnik, a po nim
+//    wybuch (patrz updateKamikazes() w game.js). Opcje: wait (sekundy bezczynności na starcie),
+//    respawns [{ x, y }] (miejsca, w których pojawia się po wybuchu).
+//
 //  OBSZAR RUCHU (area) przy tworzeniu przeciwnika w levels.js:
 //    enemy("weak", x, y, { area: { x1, y1, x2, y2 } })   dwa przeciwległe rogi prostokąta (w px poziomu)
 //  Domyślnie obszarem jest platforma, na której przeciwnik stoi, więc nigdy z niej nie schodzi.
@@ -64,6 +71,21 @@ export const ENEMY_TYPES = Object.freeze({
         armored: false,
         colors: Object.freeze({ body: "#c9823d", head: "#edb55f", visor: "#f2ead1", belt: "#5b382d", vision: "#ffe58a" }),
         vision: Object.freeze({ angle: 70, length: 100 * SCALE, offsetX: 3 * SCALE, offsetY: 5 * SCALE, alpha: 0.2, track: true }),
+        attack: Object.freeze({ damage: 1 }),
+    }),
+    kamikaze: Object.freeze({
+        label: "Kamikaze",
+        width: 14 * SCALE,
+        height: 24 * SCALE,
+        speed: 56 * SCALE,          // patrol (nieużywany: łowca od razu goni)
+        chaseMultiplier: 1.4,       // pościg: 78 * SCALE px/s, gracz biega 96 * SCALE
+        jumpSpeed: 235 * SCALE,     // skok (ok. 3 tile): przez ściany i w stronę gracza nad nim
+        hunter: true,
+        cuffMethods: Object.freeze([]),
+        cuffFromBackMethods: Object.freeze([]),
+        armored: true,
+        colors: Object.freeze({ body: "#8c2f2f", head: "#d9a066", visor: "#f2ead1", belt: "#2b2b30", vision: "#ff9a9a" }),
+        vision: Object.freeze({ angle: 70, length: 100 * SCALE, offsetX: 3 * SCALE, offsetY: 5 * SCALE, alpha: 0, track: true }),
         attack: Object.freeze({ damage: 1 }),
     }),
     strong: Object.freeze({
@@ -99,8 +121,14 @@ export function createEnemy(data, index = 0) {
         h: definition.height,
         state: data.state ?? "active",
         cuffedBy: null,
-        hunter: Boolean(data.hunter),
+        hunter: Boolean(data.hunter) || definition.hunter === true,
         paratrooper: Boolean(data.paratrooper),
+        waitHome: data.wait ?? 0,    // sekundy bezczynności na starcie poziomu
+        wait: data.wait ?? 0,        // ile jeszcze stoi bezczynnie
+        respawns: data.respawns ?? null, // kamikaze: miejsca pojawiania się po wybuchu [{ x, y }]
+        fuse: null,                  // kamikaze: ile jeszcze do wybuchu po uruchomieniu zapalnika (null = nieuzbrojony)
+        respawnIn: 0,                // kamikaze: ile jeszcze do pojawienia się po wybuchu (state "gone")
+        jumpCooldown: 0,
         fallTime: 0,                 // jak długo opada na spadochronie (do kołysania spadochronu)
         direction: data.direction ?? 1,
         speed,
@@ -169,6 +197,10 @@ export function resetEnemy(enemy) {
     enemy.support = null;
     enemy.state = "active";
     enemy.cuffedBy = null;
+    enemy.wait = enemy.waitHome;
+    enemy.fuse = null;
+    enemy.respawnIn = 0;
+    enemy.jumpCooldown = 0;
     enemy.direction = enemy.homeDirection;
     enemy.facing = enemy.homeDirection;
     enemy.exclaim = 0;
@@ -516,10 +548,32 @@ export function updateEnemy(enemy, world, dt) {
         return;
     }
 
+    if (enemy.state === "gone") return; // kamikaze po wybuchu: czeka na pojawienie się (game.js)
+
     enemy.blind = world.smokes ? isBlinded(enemy, world.smokes) : false;
     enemy.exclaim = Math.max(0, enemy.exclaim - dt);
-    const command = enemy.state === "active"
+    enemy.jumpCooldown = Math.max(0, enemy.jumpCooldown - dt);
+    let waiting = false;
+    if (enemy.wait > 0) { // bezczynność na starcie (np. kamikaze "budzi się" po kilku sekundach)
+        enemy.wait = Math.max(0, enemy.wait - dt);
+        waiting = true;
+    }
+    const command = enemy.state === "active" && !waiting
         ? think(enemy, world, dt)
-        : { move: 0, speed: 0, allowDrop: false }; // zakuty: tylko grawitacja
+        : { move: 0, speed: 0, allowDrop: false }; // zakuty albo czekający: tylko grawitacja
+
+    // Skoki (typy z jumpSpeed): w pościgu przez ścianę na drodze i w stronę gracza, który jest nad nim.
+    const jumpSpeed = ENEMY_TYPES[enemy.type].jumpSpeed;
+    if (jumpSpeed && enemy.state === "active" && !waiting && enemy.onGround && enemy.jumpCooldown <= 0
+        && enemy.ai.mode === "chase") {
+        const { player } = world;
+        const above = player.y + player.h < enemy.y + enemy.h - 24 * SCALE
+            && Math.abs(player.x + player.w / 2 - (enemy.x + enemy.w / 2)) < 140 * SCALE;
+        if (enemy.hitWall || above) {
+            enemy.vy = -jumpSpeed;
+            enemy.onGround = false;
+            enemy.jumpCooldown = 0.6;
+        }
+    }
     physics(enemy, command, world, dt);
 }

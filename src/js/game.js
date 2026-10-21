@@ -62,6 +62,20 @@ const PARATROOPER_STRONG_EVERY = 4;            // co który spadochroniarz jest 
 const PARATROOPER_SPAWN_MIN = 12 * SCALE;      // start nad górną krawędzią poziomu: od tylu px ...
 const PARATROOPER_SPAWN_SPREAD = 40 * SCALE;   // ... do tylu px więcej (różne momenty lądowania)
 
+// Tryb poziomu "boss": po mapie goni gracza kamikaze z bombami przy ciele. Gdy gracz zbliży się na
+// BOSS_TRIGGER_RADIUS, zapala się lont, a po BOSS_FUSE sekundach następuje wybuch: kto jest wtedy w promieniu
+// BOSS_BLAST_RADIUS, ginie. Kto zdąży uciec, przeżywa, a kamikaze (zniszczony) wraca po BOSS_RESPAWN_TIME
+// sekundach w jednym z miejsc `respawns`, najbliższym graczowi, ale dalszym niż BOSS_RESPAWN_MIN_DISTANCE.
+// Poziom wygrywa się rozbrojeniem wszystkich paneli (zwykle 3).
+const BOSS_TRIGGER_RADIUS = 40 * SCALE;
+const BOSS_BLAST_RADIUS = 44 * SCALE;
+const BOSS_FUSE = 0.7;
+const BOSS_RESPAWN_TIME = 5;
+const BOSS_RESPAWN_MIN_DISTANCE = 300 * SCALE;
+const BOSS_RESPAWN_WAIT = 0.8;                 // po pojawieniu się chwilę stoi (żeby nie wyskakiwał na gracza)
+const BOSS_BLIND_STUN = 2.5;                   // s dezorientacji kamikaze po trafieniu dymem (patrz updateKamikazes)
+const BOSS_BLAST_TIME = 0.6;                   // jak długo widać wybuch
+
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
 const WALL_JUMP_SPEED = 200 * SCALE;     // prędkość pionowa odbicia
 const WALL_KICK_SPEED = 100 * SCALE;     // prędkość pozioma odbicia (od ściany)
@@ -209,6 +223,8 @@ export function createGame(initialLevel) {
     let jumpPads = [];
     let mode = "bombs";                   // "bombs" = rozbrój bomby i dojdź do wyjścia, "panel" = jeden panel, skradanka
     let alarm = { active: false, time: 0 }; // alarm w trybie "panel" (time = sekundy od włączenia)
+    let blasts = [];                      // wybuchy kamikaze { x, y, age } (tylko wygląd; skutek liczy explodeKamikaze)
+    let deathReason = null;               // "blast" po wybuchu kamikaze (main.js pokazuje wtedy własny komunikat)
     let penalty = { amount: 0, time: 0 }; // ostatnia kara czasowa (do wyświetlenia w HUD)
 
     // Animacje gracza (sprite sheet z animations.js).
@@ -292,7 +308,7 @@ export function createGame(initialLevel) {
 
     // Tekstura bomby: w trybie "panel" ta sama bomba jest panelem (panel / panelDefused w textures.js).
     function bombTexture(defused) {
-        if (mode === "panel") return defused ? "panelDefused" : "panel";
+        if (mode !== "bombs") return defused ? "panelDefused" : "panel"; // "panel" i "boss": bomba to panel
         return defused ? "bombDefused" : "bomb";
     }
 
@@ -323,6 +339,12 @@ export function createGame(initialLevel) {
             defused: false,
         }));
         enemies = (next.enemies ?? []).map(createEnemy);
+        // Kamikaze porusza się po całym poziomie (domyślny obszar to cała mapa, nie jedna platforma).
+        for (const enemy of enemies) {
+            if (enemy.type === "kamikaze" && !enemy.areaData) {
+                enemy.areaData = { x1: 0, y1: -1000 * SCALE, x2: levelWidth, y2: levelHeight };
+            }
+        }
         enemies.forEach((enemy) => initEnemyArea(enemy, platforms));
         // Kolec w danych poziomu to prostokąt { x, y, w, h } (patrz spike() w levels.js).
         spikes = (next.spikes ?? []).map((data) => ({ texture: "spike", color: "#aab4bd", ...data }));
@@ -371,6 +393,8 @@ export function createGame(initialLevel) {
         enemies = enemies.filter((enemy) => !enemy.paratrooper); // spadochroniarze z alarmu znikają
         enemies.forEach(resetEnemy);
         alarm = { active: false, time: 0 };
+        blasts = [];
+        deathReason = null;
         checkpoint = { ...spawn };
         player.maxHp = level.hp ?? PLAYER_MAX_HP;
         player.hp = player.maxHp;
@@ -754,6 +778,73 @@ export function createGame(initialLevel) {
         }
     }
 
+    // ----- Kamikaze (tryb "boss") -----
+
+    // Zapalnik, wybuch i ponowne pojawienie się kamikaze. Pościg i skoki są w enemies.js.
+    function updateKamikazes(dt) {
+        for (const blast of blasts) blast.age += dt;
+        blasts = blasts.filter((blast) => blast.age < BOSS_BLAST_TIME);
+
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+        for (const boss of enemies) {
+            if (boss.type !== "kamikaze") continue;
+            if (boss.state === "gone") {
+                boss.respawnIn -= dt;
+                if (boss.respawnIn <= 0) respawnKamikaze(boss);
+                continue;
+            }
+            if (boss.state !== "active" || player.hp <= 0) continue;
+            // Dym (klawisz F): oślepiony kamikaze gubi cel i staje zdezorientowany, a lont się nie pali (palący się gaśnie).
+            if (boss.blind) {
+                boss.fuse = null;
+                boss.wait = Math.max(boss.wait, BOSS_BLIND_STUN);
+                continue;
+            }
+            if (boss.wait > 0) continue;
+
+            const distance = Math.hypot(px - (boss.x + boss.w / 2), py - (boss.y + boss.h / 2));
+            if (boss.fuse === null) {
+                if (distance <= BOSS_TRIGGER_RADIUS) boss.fuse = BOSS_FUSE; // gracz za blisko: lont się pali
+            } else {
+                boss.fuse -= dt;
+                if (boss.fuse <= 0) explodeKamikaze(boss, distance);
+            }
+        }
+    }
+
+    // Wybuch: gracz w promieniu rażenia ginie od razu (nietykalność po utracie HP nie chroni).
+    function explodeKamikaze(boss, distance) {
+        blasts.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h / 2, age: 0 });
+        if (distance <= BOSS_BLAST_RADIUS && player.hp > 0) {
+            player.hp = 0;
+            hurtFlash = HURT_FLASH_TIME;
+            deathReason = "blast";
+        }
+        boss.state = "gone";
+        boss.fuse = null;
+        boss.respawnIn = BOSS_RESPAWN_TIME;
+    }
+
+    function respawnKamikaze(boss) {
+        const home = { x: boss.homeX + boss.w / 2, y: boss.homeY + boss.h };
+        const points = [home, ...(boss.respawns ?? [])];
+        const px = player.x + player.w / 2;
+        const byDistance = (a, b) => Math.abs(a.x - px) - Math.abs(b.x - px);
+        const far = points.filter((point) => Math.abs(point.x - px) >= BOSS_RESPAWN_MIN_DISTANCE).sort(byDistance);
+        const point = far[0] ?? points.sort(byDistance).at(-1); // brak dość dalekiego: najdalszy
+        boss.x = point.x - boss.w / 2;
+        boss.y = point.y - boss.h;
+        boss.vy = 0;
+        boss.onGround = false;
+        boss.state = "active";
+        boss.fuse = null;
+        boss.wait = BOSS_RESPAWN_WAIT;
+        boss.ai = { mode: "chase", timer: 2, lastSeenX: px, sees: false };
+        boss.facing = px >= point.x ? 1 : -1;
+        boss.direction = boss.facing;
+    }
+
     // Kontakt z aktywnym przeciwnikiem zabiera 1 HP, ale tylko gdy gracz jest PRZED nim (po stronie,
     // w którą patrzy). Od tyłu przeciwnik nie rani. Wyjątek: dash w słabego przeciwnika ma
     // pierwszeństwo (main.js kajdankuje go przed tym wywołaniem, a tu pomijamy go na wszelki wypadek).
@@ -763,6 +854,7 @@ export function createGame(initialLevel) {
         const playerCenter = player.x + player.w / 2;
         for (const enemy of enemies) {
             if (enemy.state !== "active" || !overlaps(player, enemy)) continue;
+            if (enemy.type === "kamikaze") continue; // kamikaze rani tylko wybuchem (updateKamikazes)
             const enemyCenter = enemy.x + enemy.w / 2;
             if ((playerCenter - enemyCenter) * enemy.facing < 0) continue; // gracz za plecami przeciwnika
             const dashingIntoIt = player.dashTime > 0
@@ -899,6 +991,7 @@ export function createGame(initialLevel) {
             if (alarm.active) alarm.time += dt;
             else if (enemies.some((enemy) => enemy.state === "active" && enemy.ai.mode === "chase")) triggerAlarm();
         }
+        updateKamikazes(dt);
 
         grappleCooldown = Math.max(0, grappleCooldown - dt);
         for (const [target, remaining] of grappleTargetLocks) {
@@ -1258,7 +1351,7 @@ export function createGame(initialLevel) {
         const x = Math.round(r.x);
         const y = Math.round(r.y);
         if (drawTexture(ctx, bomb.texture, x, y, r.w, r.h)) return;
-        if (mode === "panel") {
+        if (mode !== "bombs") {
             drawPanelFallback(ctx, bomb, x, y, r.w, r.h);
             return;
         }
@@ -1284,11 +1377,78 @@ export function createGame(initialLevel) {
         }
     }
 
+    // Kamikaze: ciemnoczerwony żołnierz z pasem bomb na piersi. Po uruchomieniu lontu miga na przemian czerwono
+    // i żółto (im bliżej wybuchu, tym szybciej), a gdy jeszcze "śpi" (wait), jest przygaszony.
+    function drawKamikaze(ctx, enemy) {
+        const u = (value) => Math.round(value * SCALE);
+        const x = Math.round(enemy.x);
+        const y = Math.round(enemy.y);
+        const { w, h } = enemy;
+        const colors = ENEMY_TYPES.kamikaze.colors;
+        const armed = enemy.fuse !== null;
+        const flashOn = armed && Math.floor(enemy.fuse * 16) % 2 === 0;
+
+        ctx.save();
+        if (enemy.wait > 0 && enemy.respawnIn <= 0 && !armed) ctx.globalAlpha = 0.65;
+        ctx.fillStyle = flashOn ? "#ffe08a" : armed ? "#ff4d4d" : colors.body;
+        ctx.fillRect(x + u(1), y + u(7), w - u(2), h - u(7));
+        ctx.fillStyle = colors.head;
+        ctx.fillRect(x + u(3), y + u(1), w - u(6), u(7));
+        ctx.fillStyle = colors.visor;
+        const visorW = u(3);
+        ctx.fillRect(enemy.facing > 0 ? x + w - u(3) - visorW : x + u(3), y + u(4), visorW, u(2));
+        ctx.fillStyle = colors.belt;
+        ctx.fillRect(x + u(1), y + h - u(5), w - u(2), u(2));
+
+        // Pas z trzema bombami na piersi (czarne kule z lontem i migającą iskrą).
+        const radius = u(2.5);
+        for (let i = 0; i < 3; i++) {
+            const cx = x + u(3.5) + i * u(3.5);
+            const cy = y + u(12);
+            ctx.fillStyle = "#15151a";
+            for (let dy = -radius; dy <= radius; dy++) {
+                const half = Math.round(Math.sqrt(radius * radius - dy * dy));
+                ctx.fillRect(cx - half, cy + dy, half * 2, 1);
+            }
+            if (Math.floor(timeLeft * 4 + i) % 2 === 0 || armed) {
+                ctx.fillStyle = armed ? "#ffffff" : "#ff7a3d";
+                ctx.fillRect(cx, cy - radius - SCALE, SCALE, SCALE);
+            }
+        }
+        ctx.restore();
+    }
+
+    // Wybuch kamikaze: biały błysk, rozszerzające się pomarańczowe koło z pierścieniem (promień rażenia).
+    function drawBlast(ctx, blast) {
+        const t = blast.age / BOSS_BLAST_TIME;
+        const grow = Math.min(1, blast.age / 0.18);
+        const radius = BOSS_BLAST_RADIUS * (1 - (1 - grow) * (1 - grow));
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - t);
+        ctx.fillStyle = t < 0.2 ? "#fff7d6" : "#ff9d3d";
+        ctx.beginPath();
+        ctx.arc(blast.x, blast.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = Math.max(0, 0.9 - t);
+        ctx.strokeStyle = "#ffe08a";
+        ctx.lineWidth = 3 * SCALE;
+        ctx.beginPath();
+        ctx.arc(blast.x, blast.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     function drawEnemy(ctx, enemy) {
         const u = (value) => Math.round(value * SCALE); // piksele projektu 16 px -> piksele gry
         const x = Math.round(enemy.x);
         const y = Math.round(enemy.y);
         const { w, h, type, state } = enemy;
+
+        if (state === "gone") return; // kamikaze po wybuchu
+        if (type === "kamikaze") {
+            drawKamikaze(ctx, enemy);
+            return;
+        }
 
         if (state === "cuffed") {
             // Low, desaturated silhouette and visible cuffs distinguish inactive enemies.
@@ -1379,7 +1539,7 @@ export function createGame(initialLevel) {
             color = "#a4f1dc";
         } else if (bomb) {
             target = bomb;
-            text = mode === "panel" ? "E: rozbrój panel" : "E: rozbrój";
+            text = mode !== "bombs" ? "E: rozbrój panel" : "E: rozbrój";
             color = "#ffe08a";
         } else if (grapple) {
             target = grapple;
@@ -1675,6 +1835,60 @@ export function createGame(initialLevel) {
         ctx.textBaseline = "alphabetic";
     }
 
+    // HUD bossa: komunikat o lontach, o śpiącym albo zniszczonym kamikaze i strzałka na brzegu ekranu,
+    // gdy kamikaze jest poza widokiem (na dużej mapie trzeba wiedzieć, z której strony nadbiega).
+    function drawBossHud(ctx) {
+        const bosses = enemies.filter((enemy) => enemy.type === "kamikaze");
+        ctx.textAlign = "center";
+        const armed = bosses.some((boss) => boss.fuse !== null);
+        const asleep = bosses.find((boss) => boss.state === "active" && boss.wait > 0);
+        const gone = bosses.find((boss) => boss.state === "gone");
+        if (armed) {
+            ctx.font = `700 ${10 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
+            ctx.fillStyle = Math.floor(timeLeft * 8) % 2 === 0 ? "#ff5a5a" : "#ffe08a";
+            ctx.fillText("UCIEKAJ!", VIEW_WIDTH / 2, 20 * SCALE);
+        } else if (asleep || gone) {
+            ctx.font = `700 ${6 * SCALE}px system-ui, sans-serif`;
+            ctx.fillStyle = "rgba(232, 237, 244, 0.85)";
+            ctx.fillText(asleep
+                ? `Kamikaze rusza za ${Math.ceil(asleep.wait)} s`
+                : `Kamikaze wróci za ${Math.ceil(gone.respawnIn)} s`, VIEW_WIDTH / 2, 14 * SCALE);
+        }
+
+        for (const boss of bosses) {
+            if (boss.state !== "active") continue;
+            const bx = boss.x + boss.w / 2 - camera.x;
+            const by = boss.y + boss.h / 2 - camera.y;
+            if (bx >= 0 && bx <= VIEW_WIDTH && by >= 0 && by <= VIEW_HEIGHT) continue; // widać go na ekranie
+            const cx = VIEW_WIDTH / 2;
+            const cy = VIEW_HEIGHT / 2;
+            const dx = bx - cx;
+            const dy = by - cy;
+            const margin = 14 * SCALE;
+            const t = Math.min((cx - margin) / Math.max(1e-6, Math.abs(dx)), (cy - margin) / Math.max(1e-6, Math.abs(dy)));
+            const ax = cx + dx * t;
+            const ay = cy + dy * t;
+            const angle = Math.atan2(dy, dx);
+            const size = 6 * SCALE;
+            ctx.save();
+            ctx.translate(ax, ay);
+            ctx.rotate(angle);
+            ctx.fillStyle = "rgba(255, 90, 90, 0.9)";
+            ctx.beginPath();
+            ctx.moveTo(size, 0);
+            ctx.lineTo(-size * 0.7, size * 0.8);
+            ctx.lineTo(-size * 0.7, -size * 0.8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+            const meters = Math.round(Math.hypot(boss.x - player.x, boss.y - player.y) / TILE);
+            ctx.font = `700 ${5 * SCALE}px system-ui, sans-serif`;
+            ctx.fillStyle = "rgba(255, 200, 200, 0.95)";
+            ctx.fillText(`${meters} m`, ax - Math.cos(angle) * size * 2.2, ay - Math.sin(angle) * size * 2.2 + 2 * SCALE);
+        }
+        ctx.textAlign = "right";
+    }
+
     // Interfejs przyklejony do ekranu: nazwa poziomu, timer i licznik bomb.
     // (Podpowiedź ze sterowaniem jest w rogu ekranu, w HTML.)
     function drawHud(ctx) {
@@ -1716,7 +1930,8 @@ export function createGame(initialLevel) {
         ctx.font = `${6 * SCALE}px system-ui, sans-serif`;
         ctx.fillStyle = "rgba(232, 237, 244, 0.9)";
         ctx.fillText(
-            mode === "panel" ? `Panel: ${defusedCount()}/${bombs.length}` : `Bomby: ${defusedCount()}/${bombs.length}`,
+            mode === "bombs" ? `Bomby: ${defusedCount()}/${bombs.length}`
+                : bombs.length > 1 ? `Panele: ${defusedCount()}/${bombs.length}` : `Panel: ${defusedCount()}/${bombs.length}`,
             VIEW_WIDTH - 8 * SCALE, 26 * SCALE,
         );
 
@@ -1735,6 +1950,8 @@ export function createGame(initialLevel) {
             ctx.fillText("ALARM!", VIEW_WIDTH / 2, 18 * SCALE);
             ctx.textAlign = "right";
         }
+
+        if (mode === "boss") drawBossHud(ctx);
 
         // Kara czasowa (np. zła odpowiedź): czerwony napis pod timerem przez chwilę.
         if (penalty.time > 0) {
@@ -1803,7 +2020,7 @@ export function createGame(initialLevel) {
             }
         }
 
-        if (mode !== "panel") drawExit(ctx); // w trybie "panel" nie ma drzwi: wygrywasz po rozbrojeniu panelu
+        if (mode === "bombs") drawExit(ctx); // w trybach "panel" i "boss" nie ma drzwi: wygrywasz po rozbrojeniu paneli
 
         for (const spike of spikes) drawSpike(ctx, spike);
         for (const pad of jumpPads) drawJumpPad(ctx, pad);
@@ -1825,6 +2042,7 @@ export function createGame(initialLevel) {
         for (const enemy of enemies) drawEnemy(ctx, enemy);
         for (const enemy of enemies) drawExclaim(ctx, enemy);
         for (const enemy of enemies) drawBlindMark(ctx, enemy);
+        for (const blast of blasts) drawBlast(ctx, blast);
 
         // Cienie po dashu, potem sam gracz
         for (const g of ghosts) {
@@ -1893,6 +2111,9 @@ export function createGame(initialLevel) {
         atRightEdge: () => player.x + player.w >= levelWidth - 1,
         // Tryb poziomu ("bombs" albo "panel") i alarm (tylko do odczytu; triggerAlarm służy też testom).
         get mode() { return mode; },
+        get exitRequired() { return mode === "bombs"; }, // czy po rozbrojeniu trzeba jeszcze dojść do drzwi
+        get deathReason() { return deathReason; },
+        get blasts() { return blasts; },
         get alarm() { return { ...alarm }; },
         triggerAlarm,
         get level() { return level; },

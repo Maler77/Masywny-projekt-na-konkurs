@@ -90,7 +90,9 @@ function buildLevelList() {
         info.className = "level-card__info";
         info.textContent = level.mode === "panel"
             ? `Panel · skradanka · ${formatTime(level.timeLimit)}`
-            : `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
+            : level.mode === "boss"
+                ? `BOSS · ${level.bombs.length} ${level.bombs.length === 1 ? "panel" : "panele"} · ${formatTime(level.timeLimit)}`
+                : `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
 
         card.append(thumb, name, subtitle, info);
         levelList.append(card);
@@ -375,7 +377,7 @@ document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // Kategoria pytań poziomu: poziomy z panelem (mode "panel") zawsze losują trudne.
 function questionCategoryFor(level) {
-    return level.mode === "panel" ? PANEL_QUESTION_CATEGORY : level.questionCategory;
+    return level.mode === "panel" ? PANEL_QUESTION_CATEGORY : level.questionCategory; // boss: kategoria z pliku poziomu
 }
 
 // Otwiera okno z pytaniem dla bomby (E przy bombie).
@@ -436,9 +438,9 @@ function loseGame(reason) {
 function winGame() {
     const hasNext = currentLevel + 1 < LEVELS.length;
     const name = LEVELS[currentLevel].name;
-    const panel = LEVELS[currentLevel].mode === "panel";
+    const panel = LEVELS[currentLevel].mode !== "bombs" && LEVELS[currentLevel].mode !== undefined;
     winSummary.textContent = hasNext
-        ? `${name} ukończony! ${panel ? "Panel rozbrojony." : "Wszystkie bomby rozbrojone."}`
+        ? `${name} ukończony! ${panel ? (LEVELS[currentLevel].mode === "boss" ? "Wszystkie panele rozbrojone." : "Panel rozbrojony.") : "Wszystkie bomby rozbrojone."}`
         : `${name} ukończony! To był ostatni poziom, gratulacje!`;
     winTime.textContent = `Pozostały czas: ${formatTime(game.timeLeft)}`;
     // Po ostatnim poziomie przycisk prowadzi do epilogu (o ile jest); inaczej go nie ma.
@@ -498,11 +500,13 @@ function frame(now) {
         if (state === "playing") game.resolveEnemyAttack();
 
         // Tryb "bombs": rozbrojone wszystkie bomby i dojście do drzwi po prawej. Tryb "panel": wystarczy rozbrojony panel.
-        if (state === "playing" && game.allDefused() && (game.mode === "panel" || game.atRightEdge())) winGame();
+        if (state === "playing" && game.allDefused() && (!game.exitRequired || game.atRightEdge())) winGame();
 
         // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
         // tylko cofają gracza do checkpointu (patrz game.js).
-        if (state === "playing" && game.isDead()) loseGame("Straciłeś całe życie!");
+        if (state === "playing" && game.isDead()) {
+            loseGame(game.deathReason === "blast" ? "Kamikaze cię wysadził!" : "Straciłeś całe życie!");
+        }
     } else if (state === "bomb") {
         // Postać stoi, ale czas leci dalej.
         if (!game.allDefused()) game.tickTimer(dt);
@@ -519,7 +523,7 @@ function frame(now) {
 
     // Koniec czasu = przegrana (także podczas pytania).
     if ((state === "playing" || state === "bomb") && !game.allDefused() && game.timeLeft <= 0) {
-        loseGame(game.mode === "panel" ? "Czas minął! Panel nie został rozbrojony." : "Czas minął! Bomby wybuchły.");
+        loseGame(game.mode === "bombs" ? "Czas minął! Bomby wybuchły." : "Czas minął! Nie rozbrojono wszystkich paneli.");
     }
 
     input.endFrame();

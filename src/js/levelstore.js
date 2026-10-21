@@ -23,13 +23,16 @@
 //  FORMAT PLIKU (wszystkie współrzędne w pikselach gry, 1 tile = 32 px, patrz levels.js):
 //    name, subtitle, questionCategory ("easy" | "medium" | "hard"), background (lista tekstur tła),
 //    timeLimit (s), width, height, hp (opcjonalnie), spawn { x, y }   (x = środek, y = pod stopami)
-//    mode       "bombs" (domyślnie: rozbrój wszystkie bomby i dojdź do drzwi na prawym końcu) albo
+//    mode       "bombs" (domyślnie: rozbrój wszystkie bomby i dojdź do drzwi na prawym końcu),
 //               "panel" (skradanka: jedna "bomba" to panel, wygrywasz po jego rozbrojeniu; zauważenie przez
-//               strażnika włącza alarm i spadają spadochroniarze; pytania zawsze trudne = "hard")
+//               strażnika włącza alarm i spadają spadochroniarze; pytania zawsze trudne = "hard") albo
+//               "boss" (duża mapa, gonią cię kamikaze z bombami; bomby to panele, wygrywasz po rozbrojeniu
+//               wszystkich, zwykle 3; poziom musi mieć przeciwnika typu "kamikaze")
 //    paratroopers  tylko w trybie "panel": ilu przeciwników spada po alarmie (domyślnie 14)
 //    platforms  [{ x, y, w, h, texture, textureMode?, solid?, oneWay?, grappleable? }]
 //    bombs      [{ x, y }]                                              (x = środek, y = podłoże)
-//    enemies    [{ type: "weak" | "strong", x, y, direction?, speed?, area?: { x1, y1, x2, y2 } }]
+//    enemies    [{ type: "weak" | "strong" | "kamikaze", x, y, direction?, speed?, area?: { x1, y1, x2, y2 } }]
+//               kamikaze (boss): wait? (s bezczynności na starcie), respawns? [{ x, y }] (gdzie wraca po wybuchu)
 //    spikes     [{ x, y, w, h }]                                        (prostokąt, patrz spike())
 //    jumpPads   [{ x, y, w, h, power? }]                                (prostokąt, patrz jumpPad())
 //  texture to nazwa z textures.js ("platform", "ground", "wall") albo ścieżka do obrazka z folderu
@@ -39,6 +42,7 @@
 import { VIEW_HEIGHT } from "./config.js";
 import { platform } from "./levels.js";
 import { TEXTURES, textureKey } from "./textures.js";
+import { ENEMY_TYPES } from "./enemies.js";
 
 const MANIFEST_URL = new URL("../data/levels/index.json", import.meta.url);
 const LEVELS_DIR = new URL("../data/levels/", import.meta.url);
@@ -46,7 +50,7 @@ const DRAFTS_KEY = "masywny.editor.drafts";
 const AUTOSAVE_KEY = "masywny.editor.autosave";
 
 export const QUESTION_CATEGORIES = ["easy", "medium", "hard"];
-export const LEVEL_MODES = ["bombs", "panel"];
+export const LEVEL_MODES = ["bombs", "panel", "boss"];
 export const PANEL_QUESTION_CATEGORY = "hard"; // poziomy z panelem zawsze losują pytania trudne
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
@@ -87,6 +91,8 @@ export function serializeLevel(level) {
         out.mode = "panel";
         out.questionCategory = PANEL_QUESTION_CATEGORY;
         if (isNumber(level.paratroopers)) out.paratroopers = level.paratroopers;
+    } else if (level.mode === "boss") {
+        out.mode = "boss";
     }
     out.spawn = { x: level.spawn.x, y: level.spawn.y };
 
@@ -108,6 +114,8 @@ export function serializeLevel(level) {
         if (isNumber(e.chaseSpeed)) item.chaseSpeed = e.chaseSpeed;
         if (e.area) item.area = { x1: e.area.x1, y1: e.area.y1, x2: e.area.x2, y2: e.area.y2 };
         if (e.vision) item.vision = { ...e.vision };
+        if (isNumber(e.wait) && e.wait > 0) item.wait = e.wait;
+        if (Array.isArray(e.respawns) && e.respawns.length > 0) item.respawns = e.respawns.map((r) => ({ x: r.x, y: r.y }));
         return item;
     });
     out.spikes = (level.spikes ?? []).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h }));
@@ -128,7 +136,7 @@ export function normalizeLevel(raw) {
     need(typeof raw.name === "string" && raw.name.trim() !== "", "brak pola name");
     need(QUESTION_CATEGORIES.includes(raw.questionCategory ?? "easy"), "questionCategory musi być easy, medium albo hard");
     const mode = raw.mode ?? "bombs";
-    need(LEVEL_MODES.includes(mode), 'mode musi być "bombs" albo "panel"');
+    need(LEVEL_MODES.includes(mode), 'mode musi być "bombs", "panel" albo "boss"');
     need(raw.paratroopers === undefined || (Number.isInteger(raw.paratroopers) && raw.paratroopers >= 1 && raw.paratroopers <= 60),
         "paratroopers musi być liczbą całkowitą od 1 do 60");
     need(isNumber(raw.timeLimit ?? 60) && (raw.timeLimit ?? 60) > 0, "timeLimit musi być liczbą większą od 0");
@@ -174,13 +182,20 @@ export function normalizeLevel(raw) {
         return { ...b };
     });
     const enemies = list("enemies").map((e, i) => {
-        need(e.type === "weak" || e.type === "strong", `enemies[${i}]: type musi być weak albo strong`);
+        need(Object.hasOwn(ENEMY_TYPES, e.type), `enemies[${i}]: type musi być jednym z: ${Object.keys(ENEMY_TYPES).join(", ")}`);
         need(isNumber(e.x) && isNumber(e.y), `enemies[${i}]: x i y muszą być liczbami`);
+        need(e.wait === undefined || (isNumber(e.wait) && e.wait >= 0), `enemies[${i}]: wait musi być liczbą >= 0`);
+        need(e.respawns === undefined || (Array.isArray(e.respawns) && e.respawns.every((r) => isNumber(r?.x) && isNumber(r?.y))),
+            `enemies[${i}]: respawns musi być listą punktów { x, y }`);
         return { ...e };
     });
 
     // Panel to dokładnie jedna "bomba" i zawsze trudne pytania.
     if (mode === "panel") need(bombs.length === 1, `poziom z panelem musi mieć dokładnie 1 bombę (panel), a ma ${bombs.length}`);
+    if (mode === "boss") {
+        need(bombs.length >= 1, "poziom bossa musi mieć co najmniej 1 panel (bombę), zwykle 3");
+        need(enemies.some((e) => e.type === "kamikaze"), 'poziom bossa musi mieć przeciwnika typu "kamikaze"');
+    }
 
     const level = {
         ...raw,

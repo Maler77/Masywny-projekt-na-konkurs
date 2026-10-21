@@ -44,6 +44,7 @@ const TOOLS = [
     { id: "bomb", group: "Obiekty (kliknij)", label: "Bomba / panel", hint: "Klik stawia bombę na podłożu pod kursorem. W trybie „Panel” jest tylko jeden (nowy zastępuje stary)." },
     { id: "enemy-weak", group: "Obiekty (kliknij)", label: "Przeciwnik słaby", hint: "Klik stawia przeciwnika, potem przeciągnij prostokąt pola patrolu (Enter = domyślne pole)." },
     { id: "enemy-strong", group: "Obiekty (kliknij)", label: "Przeciwnik silny", hint: "Klik stawia przeciwnika, potem przeciągnij prostokąt pola patrolu (Enter = domyślne pole)." },
+    { id: "enemy-kamikaze", group: "Obiekty (kliknij)", label: "Kamikaze (boss)", hint: "Klik stawia kamikaze (tryb „Boss”). Goni gracza po całej mapie; miejsca pojawiania się po wybuchu wpiszesz w polu „Respawny”." },
     { id: "jumppad", group: "Obiekty (kliknij)", label: "Skocznia", hint: "Klik stawia skocznię (1 tile) na podłożu pod kursorem." },
     { id: "grapple", group: "Obiekty (kliknij)", label: "Punkt zaczepienia haka", hint: "Klik stawia punkt, na którym zaczepia się hak (nie jest solidny)." },
 ];
@@ -257,6 +258,9 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
             const pos = pointPos(p.x, p.y);
             if (model.mode === "panel") model.bombs = []; // panel jest tylko jeden
             addTo("bombs", { x: pos.x, y: pos.y });
+        } else if (tool === "enemy-kamikaze") {
+            const pos = pointPos(p.x, p.y);
+            addTo("enemies", { type: "kamikaze", x: pos.x, y: pos.y, id: nextEnemyId("kamikaze"), wait: 5 });
         } else if (tool === "enemy-weak" || tool === "enemy-strong") {
             const type = tool === "enemy-weak" ? "weak" : "strong";
             const pos = pointPos(p.x, p.y);
@@ -612,8 +616,12 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
                 loadSelect, fileInput),
             textField("Nazwa", () => model.name, (v) => { model.name = v.trim() || "Bez nazwy"; }),
             textField("Podtytuł", () => model.subtitle, (v) => { model.subtitle = v; }),
-            selectField("Tryb", [["bombs", "Bomby + drzwi"], ["panel", "Panel (skradanka)"]], () => model.mode ?? "bombs", (v) => {
-                if (v === "panel") {
+            selectField("Tryb", [["bombs", "Bomby + drzwi"], ["panel", "Panel (skradanka)"], ["boss", "Boss (kamikaze)"]], () => model.mode ?? "bombs", (v) => {
+                if (v === "boss") {
+                    model.mode = "boss";
+                    delete model.paratroopers;
+                    say("Tryb Boss: postaw kamikaze (narzędzie „Kamikaze”) i zwykle 3 panele (narzędzie „Bomba / panel”).");
+                } else if (v === "panel") {
                     model.mode = "panel";
                     model.questionCategory = PANEL_QUESTION_CATEGORY;
                     if (model.bombs.length > 1) {
@@ -628,6 +636,9 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
                 buildLevelBox();
                 refreshAll();
             }),
+            model.mode === "boss"
+                ? el("p", { class: "editor__hint", text: "Boss: gonią cię kamikaze, a wygrywasz po rozbrojeniu wszystkich paneli (bomb). Bez drzwi." })
+                : document.createComment("brak"),
             model.mode === "panel"
                 ? el("p", { class: "editor__hint", text: "Panel: pytania zawsze trudne; zauważenie przez przeciwnika = alarm i spadochroniarze. Bez drzwi, wygrywasz po rozbrojeniu panelu." })
                 : selectField("Pytania", QUESTION_CATEGORIES.map((c) => [c, c]), () => model.questionCategory, (v) => { model.questionCategory = v; }),
@@ -805,28 +816,38 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
         } else if (sel.kind === "jumpPads") {
             num("Siła", "power", { min: 0.1, step: 0.1 });
         } else if (sel.kind === "enemies") {
-            add(selectField("Typ", Object.entries(ENEMY_TYPES).map(([id, def]) => [id, def.label]), () => obj.type, (v) => { obj.type = v; }));
+            add(selectField("Typ", Object.entries(ENEMY_TYPES).map(([id, def]) => [id, def.label]), () => obj.type, (v) => { obj.type = v; if (v === "kamikaze") delete obj.area; buildProps(); }));
             add(selectField("Kierunek", [["1", "w prawo"], ["-1", "w lewo"]], () => String(obj.direction ?? 1), (v) => {
                 if (v === "-1") obj.direction = -1; else delete obj.direction;
             }));
             add(numberField("Prędkość", () => obj.speed, (v) => { if (v === null) delete obj.speed; else obj.speed = v; }, { min: 1, allowEmpty: true, placeholder: `${ENEMY_TYPES[obj.type].speed}` }));
 
-            propsBox.append(el("h5", { class: "editor__group", text: "Pole patrolu" }));
-            if (obj.area) {
-                const grid = el("div", { class: "editor__grid" });
-                propsBox.append(grid);
-                for (const [label, key] of [["x1", "x1"], ["y1", "y1"], ["x2", "x2"], ["y2", "y2"]]) {
-                    const field = numberField(label, () => obj.area?.[key], (v) => { obj.area[key] = v; });
-                    propFields.push(field);
-                    grid.append(field);
-                }
+            if (obj.type === "kamikaze") {
+                add(numberField("Start po (s)", () => obj.wait ?? 0, (v) => { if (v > 0) obj.wait = v; else delete obj.wait; }, { min: 0, step: 0.5 }));
+                add(textField("Respawny", () => (obj.respawns ?? []).map((r) => `${r.x},${r.y}`).join("; "), (v) => {
+                    const points = v.split(";").map((part) => part.split(",").map((n) => Number(n.trim())))
+                        .filter((xy) => xy.length === 2 && xy.every(Number.isFinite)).map(([x, y]) => ({ x, y }));
+                    if (points.length > 0) obj.respawns = points; else delete obj.respawns;
+                }, { placeholder: "x,y; x,y (gdzie wraca po wybuchu)" }));
+                propsBox.append(el("p", { class: "editor__hint", text: "Kamikaze goni gracza po całej mapie, więc nie ma pola patrolu. Po wybuchu wraca na jeden z punktów „Respawny” (albo na start)." }));
             } else {
-                propsBox.append(el("p", { class: "editor__hint", text: "Domyślnie: cała platforma, na której stoi." }));
+                propsBox.append(el("h5", { class: "editor__group", text: "Pole patrolu" }));
+                if (obj.area) {
+                    const grid = el("div", { class: "editor__grid" });
+                    propsBox.append(grid);
+                    for (const [label, key] of [["x1", "x1"], ["y1", "y1"], ["x2", "x2"], ["y2", "y2"]]) {
+                        const field = numberField(label, () => obj.area?.[key], (v) => { obj.area[key] = v; });
+                        propFields.push(field);
+                        grid.append(field);
+                    }
+                } else {
+                    propsBox.append(el("p", { class: "editor__hint", text: "Domyślnie: cała platforma, na której stoi." }));
+                }
+                propsBox.append(el("div", { class: "editor__row" },
+                    button(obj.area ? "Zaznacz od nowa" : "Zaznacz pole patrolu", () => { areaFor = sel.index; say("Przeciągnij prostokąt pola patrolu (Enter = pomiń)."); }),
+                    obj.area ? button("Domyślne", () => { delete obj.area; buildProps(); commit(); }) : null,
+                ));
             }
-            propsBox.append(el("div", { class: "editor__row" },
-                button(obj.area ? "Zaznacz od nowa" : "Zaznacz pole patrolu", () => { areaFor = sel.index; say("Przeciągnij prostokąt pola patrolu (Enter = pomiń)."); }),
-                obj.area ? button("Domyślne", () => { delete obj.area; buildProps(); commit(); }) : null,
-            ));
         }
 
         if (sel.kind !== "spawn") {
@@ -935,7 +956,7 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
     }
 
     function testLevel() {
-        if (model.bombs.length === 0) say(model.mode === "panel" ? "Uwaga: poziom nie ma panelu, więc nie da się go wygrać." : "Uwaga: poziom nie ma bomb, więc nie da się go wygrać.");
+        if (model.bombs.length === 0) say(model.mode === "bombs" || !model.mode ? "Uwaga: poziom nie ma bomb, więc nie da się go wygrać." : "Uwaga: poziom nie ma panelu, więc nie da się go wygrać.");
         saveAutosave(model);
         onTest?.(serializeLevel(model));
     }
@@ -972,8 +993,8 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
     function drawBomb(ctx, x, y, alpha = 1) {
         ctx.save();
         ctx.globalAlpha = alpha;
-        if (model.mode === "panel") {
-            // W trybie "panel" jedyna bomba jest panelem rozbrajania.
+        if (model.mode === "panel" || model.mode === "boss") {
+            // W trybach "panel" i "boss" bomby są panelami rozbrajania.
             if (!drawTexture(ctx, "panel", x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE)) {
                 ctx.fillStyle = "#1d2a33";
                 ctx.fillRect(x - BOMB_SIZE / 2, y - BOMB_SIZE, BOMB_SIZE, BOMB_SIZE);
@@ -1063,9 +1084,9 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
         } else if (tool === "bomb") {
             const pos = pointPos(p.x, p.y);
             drawBomb(ctx, pos.x, pos.y, 0.6);
-        } else if (tool === "enemy-weak" || tool === "enemy-strong") {
+        } else if (tool === "enemy-weak" || tool === "enemy-strong" || tool === "enemy-kamikaze") {
             const pos = pointPos(p.x, p.y);
-            drawEnemyBody(ctx, tool === "enemy-weak" ? "weak" : "strong", pos.x, pos.y, 1, 0.6);
+            drawEnemyBody(ctx, tool === "enemy-weak" ? "weak" : tool === "enemy-strong" ? "strong" : "kamikaze", pos.x, pos.y, 1, 0.6);
         } else if (tool === "jumppad") {
             const pos = pointPos(p.x, p.y);
             ctx.save();
