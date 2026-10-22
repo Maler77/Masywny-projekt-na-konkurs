@@ -63,17 +63,14 @@ const PARATROOPER_SPAWN_MIN = 12 * SCALE;      // start nad górną krawędzią 
 const PARATROOPER_SPAWN_SPREAD = 40 * SCALE;   // ... do tylu px więcej (różne momenty lądowania)
 
 // Tryb poziomu "boss": po mapie goni gracza kamikaze z bombami przy ciele. Gdy gracz zbliży się na
-// BOSS_TRIGGER_RADIUS, zapala się lont, a po BOSS_FUSE sekundach następuje wybuch: kto jest wtedy w promieniu
-// BOSS_BLAST_RADIUS, ginie. Kto zdąży uciec, przeżywa, a kamikaze (zniszczony) wraca po BOSS_RESPAWN_TIME
-// sekundach w jednym z miejsc `respawns`, najbliższym graczowi, ale dalszym niż BOSS_RESPAWN_MIN_DISTANCE.
+// BOSS_TRIGGER_RADIUS, kamikaze wybucha od razu i oznacza to przegraną (zwykle poziom ma wtedy 1 HP, pole `hp`).
+// Dym spowalnia kamikaze (patrz enemies.js). Kamikaze, który utknie, pojawia się po BOSS_STUCK_RESPAWN_TIME s
+// w jednym z miejsc `respawns`, najbliższym graczowi, ale dalszym niż BOSS_RESPAWN_MIN_DISTANCE.
 // Poziom wygrywa się rozbrojeniem wszystkich paneli (zwykle 3).
 const BOSS_TRIGGER_RADIUS = 40 * SCALE;
-const BOSS_BLAST_RADIUS = 44 * SCALE;
-const BOSS_FUSE = 0.7;
-const BOSS_RESPAWN_TIME = 5;
+const BOSS_STUCK_RESPAWN_TIME = 1.5;
 const BOSS_RESPAWN_MIN_DISTANCE = 300 * SCALE;
 const BOSS_RESPAWN_WAIT = 0.8;                 // po pojawieniu się chwilę stoi (żeby nie wyskakiwał na gracza)
-const BOSS_BLIND_STUN = 2.5;                   // s dezorientacji kamikaze po trafieniu dymem (patrz updateKamikazes)
 const BOSS_BLAST_TIME = 0.6;                   // jak długo widać wybuch
 
 // Wall-jump: odbicie od ściany w powietrzu (Spacja przy ścianie).
@@ -795,50 +792,58 @@ export function createGame(initialLevel) {
                 continue;
             }
             if (boss.state !== "active" || player.hp <= 0) continue;
-            // Dym (klawisz F): oślepiony kamikaze gubi cel i staje zdezorientowany, a lont się nie pali (palący się gaśnie).
-            if (boss.blind) {
-                boss.fuse = null;
-                boss.wait = Math.max(boss.wait, BOSS_BLIND_STUN);
-                continue;
-            }
             if (boss.wait > 0) continue;
 
-            const distance = Math.hypot(px - (boss.x + boss.w / 2), py - (boss.y + boss.h / 2));
-            if (boss.fuse === null) {
-                if (distance <= BOSS_TRIGGER_RADIUS) boss.fuse = BOSS_FUSE; // gracz za blisko: lont się pali
-            } else {
-                boss.fuse -= dt;
-                if (boss.fuse <= 0) explodeKamikaze(boss, distance);
+            if (boss.stuck) { // utknął (np. za wąskim przejściem): wraca do gry w innym miejscu
+                boss.stuck = false;
+                boss.state = "gone";
+                boss.respawnIn = BOSS_STUCK_RESPAWN_TIME;
+                continue;
             }
+            const distance = Math.hypot(px - (boss.x + boss.w / 2), py - (boss.y + boss.h / 2));
+            if (distance <= BOSS_TRIGGER_RADIUS) explodeKamikaze(boss); // gracz za blisko: wybuch od razu
         }
     }
 
-    // Wybuch: gracz w promieniu rażenia ginie od razu (nietykalność po utracie HP nie chroni).
-    function explodeKamikaze(boss, distance) {
+    // Wybuch: gracz ginie od razu (nietykalność po utracie HP nie chroni), nawet przy kilku HP.
+    function explodeKamikaze(boss) {
         blasts.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h / 2, age: 0 });
-        if (distance <= BOSS_BLAST_RADIUS && player.hp > 0) {
+        if (player.hp > 0) {
             player.hp = 0;
             hurtFlash = HURT_FLASH_TIME;
             deathReason = "blast";
         }
         boss.state = "gone";
-        boss.fuse = null;
-        boss.respawnIn = BOSS_RESPAWN_TIME;
+        boss.respawnIn = BOSS_STUCK_RESPAWN_TIME;
     }
 
     function respawnKamikaze(boss) {
         const home = { x: boss.homeX + boss.w / 2, y: boss.homeY + boss.h };
-        const points = [home, ...(boss.respawns ?? [])];
+        // Punkty z polem stage są brane pod uwagę tylko przy tylu rozbrojonych panelach.
+        const stage = defusedCount();
+        const listed = (boss.respawns ?? []).filter((point) => point.stage === undefined || point.stage === stage);
+        const points = listed.length > 0 ? listed : [home];
         const px = player.x + player.w / 2;
-        const byDistance = (a, b) => Math.abs(a.x - px) - Math.abs(b.x - px);
-        const far = points.filter((point) => Math.abs(point.x - px) >= BOSS_RESPAWN_MIN_DISTANCE).sort(byDistance);
-        const point = far[0] ?? points.sort(byDistance).at(-1); // brak dość dalekiego: najdalszy
+        const py = player.y + player.h / 2;
+        const minDistance = boss.respawnDistance ?? BOSS_RESPAWN_MIN_DISTANCE;
+        const distanceTo = (point) => Math.hypot(point.x - px, point.y - py);
+        // side: "left" = punkt musi leżeć na lewo od gracza, "right" = na prawo (kamikaze ma się pojawiać ZA graczem).
+        const sideOk = (point) => point.side === undefined || (point.side === "left" ? point.x < px : point.x > px);
+        const far = points.filter((point) => sideOk(point) && distanceTo(point) >= minDistance)
+            .sort((a, b) => distanceTo(a) - distanceTo(b));
+        // Żaden punkt nie jest dość daleko od gracza: kamikaze czeka (nie pojawia się mu pod nosem).
+        if (far.length === 0) return;
+        const point = far[0];
         boss.x = point.x - boss.w / 2;
         boss.y = point.y - boss.h;
         boss.vy = 0;
         boss.onGround = false;
         boss.state = "active";
         boss.fuse = null;
+        boss.stuck = false;
+        boss.stuckClock = 0;
+        boss.lostClock = 0;
+        boss.slowTime = 0;
         boss.wait = BOSS_RESPAWN_WAIT;
         boss.ai = { mode: "chase", timer: 2, lastSeenX: px, sees: false };
         boss.facing = px >= point.x ? 1 : -1;
@@ -1422,7 +1427,7 @@ export function createGame(initialLevel) {
     function drawBlast(ctx, blast) {
         const t = blast.age / BOSS_BLAST_TIME;
         const grow = Math.min(1, blast.age / 0.18);
-        const radius = BOSS_BLAST_RADIUS * (1 - (1 - grow) * (1 - grow));
+        const radius = BOSS_TRIGGER_RADIUS * 1.15 * (1 - (1 - grow) * (1 - grow));
         ctx.save();
         ctx.globalAlpha = Math.max(0, 1 - t);
         ctx.fillStyle = t < 0.2 ? "#fff7d6" : "#ff9d3d";
@@ -1840,19 +1845,14 @@ export function createGame(initialLevel) {
     function drawBossHud(ctx) {
         const bosses = enemies.filter((enemy) => enemy.type === "kamikaze");
         ctx.textAlign = "center";
-        const armed = bosses.some((boss) => boss.fuse !== null);
         const asleep = bosses.find((boss) => boss.state === "active" && boss.wait > 0);
         const gone = bosses.find((boss) => boss.state === "gone");
-        if (armed) {
-            ctx.font = `700 ${10 * SCALE}px ui-monospace, Menlo, Consolas, monospace`;
-            ctx.fillStyle = Math.floor(timeLeft * 8) % 2 === 0 ? "#ff5a5a" : "#ffe08a";
-            ctx.fillText("UCIEKAJ!", VIEW_WIDTH / 2, 20 * SCALE);
-        } else if (asleep || gone) {
+        if (asleep || gone) {
             ctx.font = `700 ${6 * SCALE}px system-ui, sans-serif`;
             ctx.fillStyle = "rgba(232, 237, 244, 0.85)";
             ctx.fillText(asleep
                 ? `Kamikaze rusza za ${Math.ceil(asleep.wait)} s`
-                : `Kamikaze wróci za ${Math.ceil(gone.respawnIn)} s`, VIEW_WIDTH / 2, 14 * SCALE);
+                : "Kamikaze utknął, zaraz wróci", VIEW_WIDTH / 2, 14 * SCALE);
         }
 
         for (const boss of bosses) {

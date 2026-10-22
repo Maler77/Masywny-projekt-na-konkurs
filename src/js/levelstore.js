@@ -32,7 +32,10 @@
 //    platforms  [{ x, y, w, h, texture, textureMode?, solid?, oneWay?, grappleable? }]
 //    bombs      [{ x, y }]                                              (x = środek, y = podłoże)
 //    enemies    [{ type: "weak" | "strong" | "kamikaze", x, y, direction?, speed?, area?: { x1, y1, x2, y2 } }]
-//               kamikaze (boss): wait? (s bezczynności na starcie), respawns? [{ x, y }] (gdzie wraca po wybuchu)
+//               kamikaze (boss): wait? (s bezczynności na starcie), respawns? [{ x, y, stage?, side? }] (gdzie wraca,
+//               gdy utknie; stage = przy ilu rozbrojonych panelach punkt jest używany; side "left" | "right" =
+//               punkt musi leżeć po lewej / prawej od gracza, czyli za jego plecami), respawnDistance? (min. odległość
+//               punktu od gracza w px, domyślnie 600; jeśli żaden punkt nie jest dość daleko, kamikaze czeka)
 //    spikes     [{ x, y, w, h }]                                        (prostokąt, patrz spike())
 //    jumpPads   [{ x, y, w, h, power? }]                                (prostokąt, patrz jumpPad())
 //  texture to nazwa z textures.js ("platform", "ground", "wall") albo ścieżka do obrazka z folderu
@@ -115,7 +118,15 @@ export function serializeLevel(level) {
         if (e.area) item.area = { x1: e.area.x1, y1: e.area.y1, x2: e.area.x2, y2: e.area.y2 };
         if (e.vision) item.vision = { ...e.vision };
         if (isNumber(e.wait) && e.wait > 0) item.wait = e.wait;
-        if (Array.isArray(e.respawns) && e.respawns.length > 0) item.respawns = e.respawns.map((r) => ({ x: r.x, y: r.y }));
+        if (Array.isArray(e.respawns) && e.respawns.length > 0) {
+            item.respawns = e.respawns.map((r) => {
+                const point = { x: r.x, y: r.y };
+                if (isNumber(r.stage)) point.stage = r.stage;
+                if (r.side === "left" || r.side === "right") point.side = r.side;
+                return point;
+            });
+        }
+        if (isNumber(e.respawnDistance)) item.respawnDistance = e.respawnDistance;
         return item;
     });
     out.spikes = (level.spikes ?? []).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h }));
@@ -186,7 +197,8 @@ export function normalizeLevel(raw) {
         need(isNumber(e.x) && isNumber(e.y), `enemies[${i}]: x i y muszą być liczbami`);
         need(e.wait === undefined || (isNumber(e.wait) && e.wait >= 0), `enemies[${i}]: wait musi być liczbą >= 0`);
         need(e.respawns === undefined || (Array.isArray(e.respawns) && e.respawns.every((r) => isNumber(r?.x) && isNumber(r?.y))),
-            `enemies[${i}]: respawns musi być listą punktów { x, y }`);
+            `enemies[${i}]: respawns musi być listą punktów { x, y, stage?, side? }`);
+        need(e.respawnDistance === undefined || (isNumber(e.respawnDistance) && e.respawnDistance >= 0), `enemies[${i}]: respawnDistance musi być liczbą >= 0`);
         return { ...e };
     });
 

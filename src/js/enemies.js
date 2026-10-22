@@ -38,11 +38,16 @@ import { SCALE } from "./config.js";
 //                  w chmurę dymu (oślepiony traci gracza z oczu jak każdy inny przeciwnik).
 //
 //  KAMIKAZE (boss, tryb poziomu "boss", patrz game.js)
-//    Typ "kamikaze" to łowca (hunter): zawsze wie, gdzie jest gracz (oślepia go tylko dym), biegnie za nim
-//    nieco wolniej, niż biega gracz, i skacze przez przeszkody oraz w stronę gracza, który jest nad nim
-//    (jumpSpeed w ENEMY_TYPES). Nie da się go zakuć. Zbliżenie się do niego uruchamia zapalnik, a po nim
-//    wybuch (patrz updateKamikazes() w game.js). Opcje: wait (sekundy bezczynności na starcie),
-//    respawns [{ x, y }] (miejsca, w których pojawia się po wybuchu).
+//    Typ "kamikaze" to łowca (hunter): zawsze wie, gdzie jest gracz, biegnie za nim nieco wolniej, niż biega
+//    gracz, i nie da się go zakuć. Zbliżenie się do niego od razu powoduje wybuch (patrz updateKamikazes()
+//    w game.js). Ruchy (updateKamikaze poniżej): bieg, skok (ok. 3 tile) przez ściany i w stronę gracza nad
+//    nim, SKOK PRZEZ LUKĘ w podłodze (do ok. 5 tili), WALL-JUMP (w szybie z dwóch ścian wspina się tak
+//    samo jak gracz, po jednej ścianie nie) i schodzenie z krawędzi. Nie ma haka ani dasha, więc nie
+//    przeskoczy szerszych przerw, a ciasne przejścia (niższe niż jego wysokość) są dla niego zamknięte.
+//    Dym (klawisz F) go spowalnia (SMOKE_SLOW_FACTOR), ale nie zatrzymuje. Gdy utknie (prawie się nie
+//    rusza przez KAMIKAZE_STUCK_TIME s), game.js przenosi go w jedno z miejsc `respawns`.
+//    Opcje: wait (sekundy bezczynności na starcie), respawns [{ x, y, stage? }] (miejsca pojawiania się;
+//    stage = przy ilu rozbrojonych panelach dany punkt jest używany, brak = zawsze).
 //
 //  OBSZAR RUCHU (area) przy tworzeniu przeciwnika w levels.js:
 //    enemy("weak", x, y, { area: { x1, y1, x2, y2 } })   dwa przeciwległe rogi prostokąta (w px poziomu)
@@ -56,6 +61,21 @@ export const ALERT_TURN_DELAY = 0.5;  // po dotknięciu od tyłu: tyle czeka, za
 export const SEARCH_TIME = 2;         // tyle czeka na gracza, zanim się odwróci i wróci do patrolu
 export const EXCLAIM_TIME = 1;        // jak długo widać "!" nad głową
 export const PARATROOPER_FALL_SPEED = 36 * SCALE; // opadanie na spadochronie (px/s)
+
+// Kamikaze (boss): stałe ruchu.
+const SMOKE_SLOW_FACTOR = 0.4;          // mnożnik prędkości kamikaze w dymie i tuż po nim
+const SMOKE_SLOW_TIME = 2;              // jak długo po wyjściu z chmury nadal jest spowolniony (s)
+const KAMIKAZE_WALL_JUMP_SPEED = 235 * SCALE;  // odbicie od ściany w górę (px/s)
+const KAMIKAZE_WALL_KICK_SPEED = 120 * SCALE;  // odbicie od ściany w bok (px/s)
+const KAMIKAZE_KICK_TIME = 0.3;         // tyle czasu leci w bok po odbiciu (s)
+const KAMIKAZE_WALL_COOLDOWN = 1.0;     // odbicie od ściany z tej samej strony dopiero po tylu s (jak u gracza)
+const KAMIKAZE_WALL_REACH = 30 * SCALE; // ściana bliżej niż tyle px zachęca do wspinania się
+const KAMIKAZE_LEAP_SPEED = 135 * SCALE; // prędkość w locie przez lukę (px/s); zasięg ok. 5 tili
+const KAMIKAZE_STUCK_TIME = 3;          // tyle sekund prawie bez ruchu = utknął
+const KAMIKAZE_STUCK_DISTANCE = 40 * SCALE; // "prawie bez ruchu" = mniej niż tyle px w KAMIKAZE_STUCK_TIME s
+const KAMIKAZE_LOST_HEIGHT = 125 * SCALE;   // różnica wysokości, od której kamikaze uważa, że jest na innym piętrze niż gracz
+const KAMIKAZE_LOST_TIME = 6;               // co tyle s sprawdza, czy zbliżył się do piętra gracza ...
+const KAMIKAZE_LOST_PROGRESS = 40 * SCALE;  // ... o co najmniej tyle px; jeśli nie, zgubił trop (jak utknięcie)
 
 // Definicje typów. Add new enemy behavior by registering another type here and listing the
 // methods that are allowed to cuff it.
@@ -78,8 +98,8 @@ export const ENEMY_TYPES = Object.freeze({
         width: 14 * SCALE,
         height: 24 * SCALE,
         speed: 56 * SCALE,          // patrol (nieużywany: łowca od razu goni)
-        chaseMultiplier: 1.4,       // pościg: 78 * SCALE px/s, gracz biega 96 * SCALE
-        jumpSpeed: 235 * SCALE,     // skok (ok. 3 tile): przez ściany i w stronę gracza nad nim
+        chaseMultiplier: 1.65,      // pościg: ok. 92 * SCALE px/s, gracz biega 96 * SCALE
+        jumpSpeed: 235 * SCALE,     // skok (ok. 3 tile): przez ściany i w stronę gracza nad nim (wysokość ok. 92 px)
         hunter: true,
         cuffMethods: Object.freeze([]),
         cuffFromBackMethods: Object.freeze([]),
@@ -125,9 +145,22 @@ export function createEnemy(data, index = 0) {
         paratrooper: Boolean(data.paratrooper),
         waitHome: data.wait ?? 0,    // sekundy bezczynności na starcie poziomu
         wait: data.wait ?? 0,        // ile jeszcze stoi bezczynnie
-        respawns: data.respawns ?? null, // kamikaze: miejsca pojawiania się po wybuchu [{ x, y }]
-        fuse: null,                  // kamikaze: ile jeszcze do wybuchu po uruchomieniu zapalnika (null = nieuzbrojony)
-        respawnIn: 0,                // kamikaze: ile jeszcze do pojawienia się po wybuchu (state "gone")
+        respawns: data.respawns ?? null, // kamikaze: miejsca pojawiania się po utknięciu [{ x, y, stage? }]
+        respawnDistance: data.respawnDistance ?? null, // kamikaze: min. odległość punktu od gracza (px), null = domyślna
+        fuse: null,                  // (nieużywane od zmiany: kamikaze wybucha od razu; zostawione dla zgodności)
+        respawnIn: 0,                // kamikaze: ile jeszcze do pojawienia się po utknięciu (state "gone")
+        slowTime: 0,                 // kamikaze: ile jeszcze jest spowolniony przez dym
+        kickTime: 0,                 // kamikaze: ile jeszcze leci w bok po odbiciu od ściany
+        kickDir: 0,
+        lastKickSide: 0,             // kamikaze: strona ostatniego odbicia od ściany (-1 / 1)
+        sinceKick: 99,               // kamikaze: czas od ostatniego odbicia od ściany
+        leaping: false,              // kamikaze: jest w skoku przez lukę
+        stuckClock: 0,               // kamikaze: wykrywanie utknięcia
+        lostClock: 0,                // kamikaze: jak długo jest na innym piętrze niż gracz
+        lostGap: 0,
+        stuckX: 0,
+        stuckY: 0,
+        stuck: false,                // kamikaze: utknął (zeruje to game.js po przeniesieniu)
         jumpCooldown: 0,
         fallTime: 0,                 // jak długo opada na spadochronie (do kołysania spadochronu)
         direction: data.direction ?? 1,
@@ -201,6 +234,14 @@ export function resetEnemy(enemy) {
     enemy.fuse = null;
     enemy.respawnIn = 0;
     enemy.jumpCooldown = 0;
+    enemy.slowTime = 0;
+    enemy.kickTime = 0;
+    enemy.lastKickSide = 0;
+    enemy.sinceKick = 99;
+    enemy.leaping = false;
+    enemy.stuckClock = 0;
+    enemy.lostClock = 0;
+    enemy.stuck = false;
     enemy.direction = enemy.homeDirection;
     enemy.facing = enemy.homeDirection;
     enemy.exclaim = 0;
@@ -533,6 +574,112 @@ function landParatrooper(enemy, world) {
     enemy.exclaim = 0;
 }
 
+// Ściana przy ciele kamikaze po stronie dir (-1 lewo, 1 prawo): platforma sięgająca przy nim na co najmniej
+// 18 * SCALE px (cienka półka nie jest ścianą, tak samo jak u gracza). reach = jak daleko szukamy.
+function kamikazeWall(enemy, platforms, dir, reach = 1) {
+    const probe = { x: dir < 0 ? enemy.x - reach : enemy.x + enemy.w, y: enemy.y, w: reach, h: enemy.h };
+    for (const p of platforms) {
+        if (p.solid === false || p.oneWay || !overlaps(probe, p)) continue;
+        const top = Math.max(probe.y, p.y);
+        const bottom = Math.min(probe.y + probe.h, p.y + p.h);
+        if (bottom - top >= 18 * SCALE) return true;
+    }
+    return false;
+}
+
+// Jedna klatka kamikaze: decyzje (bieg, skok, skok przez lukę, wall-jump), potem zwykła fizyka.
+function updateKamikaze(enemy, world, dt) {
+    const def = ENEMY_TYPES.kamikaze;
+    const { platforms, player } = world;
+    const ex = enemy.x + enemy.w / 2;
+    const ey = enemy.y + enemy.h / 2;
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    const dx = px - ex;
+    const feet = enemy.y + enemy.h;
+
+    enemy.ai = { mode: "chase", timer: SEARCH_TIME, lastSeenX: px, sees: true };
+    enemy.slowTime = enemy.blind ? SMOKE_SLOW_TIME : Math.max(0, enemy.slowTime - dt);
+    const slow = enemy.slowTime > 0 ? SMOKE_SLOW_FACTOR : 1;
+    const runSpeed = enemy.chaseSpeed * slow;
+    enemy.sinceKick += dt;
+    enemy.kickTime = Math.max(0, enemy.kickTime - dt);
+
+    // Wykrywanie utknięcia: prawie bez ruchu przez KAMIKAZE_STUCK_TIME s.
+    if (enemy.stuckClock === 0) { enemy.stuckX = ex; enemy.stuckY = ey; }
+    enemy.stuckClock += dt;
+    if (enemy.stuckClock >= KAMIKAZE_STUCK_TIME) {
+        if (Math.hypot(ex - enemy.stuckX, ey - enemy.stuckY) < KAMIKAZE_STUCK_DISTANCE) enemy.stuck = true;
+        enemy.stuckClock = 0;
+    }
+
+    // Zgubiony trop: długo na innym piętrze niż gracz (np. biega pod mostem, na którym stoi gracz).
+    // Liczy się tylko brak postępu: jeśli różnica wysokości nie maleje (np. biega pod mostem), a nie np. wspina się.
+    const heightGap = Math.abs(py - ey);
+    if (heightGap <= KAMIKAZE_LOST_HEIGHT) {
+        enemy.lostClock = 0;
+    } else {
+        if (enemy.lostClock === 0) enemy.lostGap = heightGap;
+        enemy.lostClock += dt;
+        if (enemy.lostClock >= KAMIKAZE_LOST_TIME) {
+            if (heightGap > enemy.lostGap - KAMIKAZE_LOST_PROGRESS) enemy.stuck = true;
+            enemy.lostClock = 0;
+        }
+    }
+
+    const wantDir = Math.abs(dx) > 4 ? Math.sign(dx) : 0;
+    const above = py < ey - 30 * SCALE;      // gracz wyraźnie wyżej (środek ciała)
+    const needUp = player.y + player.h < feet - 6 * SCALE; // stopy gracza wyżej niż stopy kamikaze: trzeba się wspiąć
+    let command = { move: wantDir, speed: runSpeed, allowDrop: true };
+
+    if (enemy.onGround) {
+        enemy.leaping = false;
+        // Skok przez lukę: przed nim brak podłogi, a gracz jest po drugiej stronie na podobnej wysokości lub wyżej.
+        const lookX = ex + wantDir * (enemy.w / 2 + 6 * SCALE);
+        const gapAhead = wantDir !== 0 && !floorUnder(platforms, lookX, feet, 10 * SCALE);
+        if (gapAhead && enemy.jumpCooldown <= 0 && py < feet + 40 * SCALE) {
+            enemy.vy = -def.jumpSpeed;
+            enemy.onGround = false;
+            enemy.leaping = true;
+            enemy.leapDir = wantDir;
+            enemy.jumpCooldown = 0.6;
+        } else if (enemy.jumpCooldown <= 0 && (enemy.hitWall || (above && Math.abs(dx) < 140 * SCALE))) {
+            enemy.vy = -def.jumpSpeed;           // zwykły skok: przez ścianę albo w górę do gracza
+            enemy.onGround = false;
+            enemy.jumpCooldown = 0.6;
+        }
+    }
+
+    if (!enemy.onGround) command.speed = Math.max(command.speed, KAMIKAZE_LEAP_SPEED * slow); // w powietrzu sunie szybciej
+    if (enemy.leaping && !enemy.onGround) {
+        command = { move: enemy.leapDir, speed: KAMIKAZE_LEAP_SPEED * slow, allowDrop: true };
+    } else if (!enemy.onGround) {
+        // W powietrzu: odbicie od ściany, gdy gracz jest wyżej (jak wall-jump gracza).
+        const sides = [-1, 1];
+        const touching = sides.find((side) => kamikazeWall(enemy, platforms, side, 2));
+        const canKick = (side) => side !== enemy.lastKickSide || enemy.sinceKick >= KAMIKAZE_WALL_COOLDOWN;
+        if (enemy.kickTime > 0) {
+            command = { move: enemy.kickDir, speed: KAMIKAZE_WALL_KICK_SPEED * slow, allowDrop: true };
+        } else if (needUp && touching !== undefined && canKick(touching) && enemy.vy > -120 * SCALE) {
+            enemy.vy = -KAMIKAZE_WALL_JUMP_SPEED;
+            enemy.kickDir = -touching;
+            enemy.kickTime = KAMIKAZE_KICK_TIME;
+            enemy.lastKickSide = touching;
+            enemy.sinceKick = 0;
+            command = { move: enemy.kickDir, speed: KAMIKAZE_WALL_KICK_SPEED * slow, allowDrop: true };
+        } else if (needUp) {
+            // Szuka ściany do odbicia: najpierw tej bliżej gracza, potem drugiej (jeśli wolno się od niej odbić).
+            const order = wantDir >= 0 ? [1, -1] : [-1, 1];
+            const side = order.find((s) => canKick(s) && kamikazeWall(enemy, platforms, s, KAMIKAZE_WALL_REACH));
+            if (side !== undefined) command = { move: side, speed: runSpeed, allowDrop: true };
+        }
+    }
+
+    enemy.facing = command.move !== 0 ? command.move : enemy.facing;
+    enemy.direction = enemy.facing;
+    physics(enemy, command, world, dt);
+}
+
 // Jedna klatka przeciwnika. world = { platforms, player, gravity, maxFall, smokes }.
 export function updateEnemy(enemy, world, dt) {
     if (!enemy.area) initEnemyArea(enemy, world.platforms);
@@ -557,6 +704,10 @@ export function updateEnemy(enemy, world, dt) {
     if (enemy.wait > 0) { // bezczynność na starcie (np. kamikaze "budzi się" po kilku sekundach)
         enemy.wait = Math.max(0, enemy.wait - dt);
         waiting = true;
+    }
+    if (enemy.type === "kamikaze" && enemy.state === "active" && !waiting) {
+        updateKamikaze(enemy, world, dt);
+        return;
     }
     const command = enemy.state === "active" && !waiting
         ? think(enemy, world, dt)

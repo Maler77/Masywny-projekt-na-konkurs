@@ -824,12 +824,22 @@ export function createEditor({ canvas, container, builtinLevels = [], onTest, on
 
             if (obj.type === "kamikaze") {
                 add(numberField("Start po (s)", () => obj.wait ?? 0, (v) => { if (v > 0) obj.wait = v; else delete obj.wait; }, { min: 0, step: 0.5 }));
-                add(textField("Respawny", () => (obj.respawns ?? []).map((r) => `${r.x},${r.y}`).join("; "), (v) => {
-                    const points = v.split(";").map((part) => part.split(",").map((n) => Number(n.trim())))
-                        .filter((xy) => xy.length === 2 && xy.every(Number.isFinite)).map(([x, y]) => ({ x, y }));
+                add(textField("Respawny", () => (obj.respawns ?? []).map((r) => [r.x, r.y, r.stage ?? (r.side ? "-" : null), r.side ? r.side[0].toUpperCase() : null]
+                    .filter((part) => part !== null).join(",")).join("; "), (v) => {
+                    const points = [];
+                    for (const part of v.split(";")) {
+                        const [x, y, stage, side] = part.split(",").map((token) => token.trim());
+                        if (![x, y].every((n) => n !== undefined && n !== "" && Number.isFinite(Number(n)))) continue;
+                        const point = { x: Number(x), y: Number(y) };
+                        if (stage !== undefined && stage !== "-" && Number.isFinite(Number(stage))) point.stage = Number(stage);
+                        if (side && /^l/i.test(side)) point.side = "left";
+                        if (side && /^[pr]/i.test(side)) point.side = "right";
+                        points.push(point);
+                    }
                     if (points.length > 0) obj.respawns = points; else delete obj.respawns;
-                }, { placeholder: "x,y; x,y (gdzie wraca po wybuchu)" }));
-                propsBox.append(el("p", { class: "editor__hint", text: "Kamikaze goni gracza po całej mapie, więc nie ma pola patrolu. Po wybuchu wraca na jeden z punktów „Respawny” (albo na start)." }));
+                }, { placeholder: "x,y[,panele[,L|P]]; ... (L/P = punkt po lewej/prawej od gracza)" }));
+                add(numberField("Min. odległość respawnu", () => obj.respawnDistance, (v) => { if (v === null) delete obj.respawnDistance; else obj.respawnDistance = v; }, { min: 0, allowEmpty: true, placeholder: "600" }));
+                propsBox.append(el("p", { class: "editor__hint", text: "Kamikaze goni gracza po całej mapie, więc nie ma pola patrolu. Gdy utknie (np. przed ciasnym przejściem), wraca na jeden z punktów „Respawny” (trzeci numer = ile paneli ma być już rozbrojonych)." }));
             } else {
                 propsBox.append(el("h5", { class: "editor__group", text: "Pole patrolu" }));
                 if (obj.area) {
