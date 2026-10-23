@@ -91,8 +91,6 @@ export const TEXTURES = {
     level3Thumbnail: { src: null, mode: "cover" },
     level4Thumbnail: { src: null, mode: "cover" },
     winBackground: { src: null, mode: "cover" },  // ekran wygranej
-    storyBackground: { src: null, mode: "cover" }, // ekran fabuły (prolog, przerywniki, epilog)
-    storyImage: { src: null, mode: "cover" },      // ramka na ilustrację na ekranie fabuły (można też podać "image" w story.json)
     loseBackground: { src: "assets/decha.jpg", mode: "cover" }, // ekran przegranej
 };
 

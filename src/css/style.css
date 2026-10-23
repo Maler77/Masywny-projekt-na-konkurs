@@ -117,34 +117,13 @@ kbd {
 /* Menu główne i ekrany końcowe mają własne, nieprzezroczyste tło (bez widocznej sceny gry). */
 .menu[data-screen="main"],
 .menu[data-screen="win"],
-.menu[data-screen="lose"],
-.menu[data-screen="story"] {
+.menu[data-screen="lose"] {
     background-color: #0d1620;
     backdrop-filter: none;
 }
 .menu[data-screen="main"] { --fallback: linear-gradient(160deg, #18304a 0%, #0d1620 55%, #15291f 100%); }
 .menu[data-screen="win"]  { --fallback: radial-gradient(circle at 50% 30%, #1f5a45, #0d1620 70%); }
 .menu[data-screen="lose"] { --fallback: radial-gradient(circle at 50% 30%, #5a1f2a, #0d1620 70%); }
-.menu[data-screen="story"] { --fallback: linear-gradient(160deg, #241b38 0%, #0d1620 60%, #14202b 100%); }
-
-/* Ekran fabuły: etykieta, tytuł, ilustracja (albo ramka na nią) i tekst. Kolejne akapity oddziela pusta linia. */
-.story { display: flex; flex-direction: column; align-items: center; gap: .9rem; width: min(44rem, 100%); text-align: center; }
-.story__label { margin: 0; color: #aab7c5; font-size: .8rem; letter-spacing: .2em; text-transform: uppercase; }
-.story__title { margin: 0; }
-.story__title:empty { display: none; }
-.story__image {
-    display: grid;
-    place-items: center;
-    width: min(30rem, 80%);
-    aspect-ratio: 16 / 9;
-    border: 2px dashed #4a5d70;
-    border-radius: .5rem;
-    color: #6f8499;
-    font-size: .9rem;
-}
-.story__image.has-image { border: 2px solid #4a5d70; color: transparent; background-size: cover; background-position: center; }
-.story__text { margin: 0 0 .5rem; max-width: 40rem; color: #dbe4ee; font-size: 1.15rem; line-height: 1.6; white-space: pre-line; }
-.story__text:empty { display: none; }
 
 /* Okno z pytaniem: duża część ekranu, napis u góry, pod nim odpowiedzi. */
 .bomb-panel {
@@ -205,6 +184,53 @@ kbd {
 .level-card__subtitle { color: #aab7c5; font-size: .85rem; font-weight: 400; }
 .level-card__subtitle:empty { display: none; }
 .level-card__info { color: #ffd27a; font-size: .8rem; font-weight: 600; }
+.level-card__status { color: #8ff0c4; font-size: .78rem; font-weight: 600; }
+.level-card__status:empty { display: none; }
+
+/* Blokady poziomów: kolejny poziom odblokowuje ukończenie poprzedniego (progress.js; tryb debug odblokowuje wszystko). */
+.level-card-wrap { position: relative; display: flex; }
+.menu__button.level-card:disabled,
+.menu__button.level-card:disabled:hover {
+    border-color: #435464;
+    background: #1d2a38;
+    color: #8c98a6;
+    text-decoration: none;
+    opacity: .6;
+}
+.level-card:disabled .level-card__thumb { filter: grayscale(1) brightness(.55); }
+.level-card:disabled .level-card__status { color: #ffb86b; }
+.level-card.is-complete { border-color: #3e7f6f; }
+
+/* Przycisk odtwarzający fabułę ukończonego poziomu, w rogu karty. */
+.level-card__replay {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    padding: .25rem .6rem;
+    border: 1px solid rgb(255 255 255 / .35);
+    border-radius: 999px;
+    background: rgb(10 15 22 / .8);
+    color: #fff;
+    font: inherit;
+    font-size: .75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.level-card__replay[hidden] { display: none; }
+.level-card__replay:hover { background: #79d7c4; color: #10201f; }
+.level-card__replay:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+/* Mały przycisk-link ("Resetuj postęp"). */
+.menu__link {
+    border: 0;
+    background: none;
+    color: #8c98a6;
+    font: inherit;
+    font-size: .8rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.menu__link:hover { color: #fff; }
 
 /* Sterowanie w lewym dolnym rogu: widoczne w menu, pauzie i podczas gry (wtedy przygaszone). */
 .controls-corner {
@@ -297,3 +323,147 @@ body.cursor-hidden .game { cursor: none; }
 }
 .editor__status.is-flash { background: rgb(33 74 69 / .92); color: #fff; }
 .editor__status.is-area { background: rgb(20 70 100 / .92); color: #fff; font-weight: 700; }
+
+/* ---------- Fabuła (storyplayer.js): tytuł, czat grupowy, scena z policją, zakończenie ---------- */
+.menu[data-screen="story"] { padding: 0; background: #05070b; backdrop-filter: none; }
+.story-root { position: absolute; inset: 0; overflow: hidden; outline: none; background: #05070b; color: #e8edf4; }
+
+/* Każda scena to osobna warstwa, przełączana płynnie (czas: --fade ustawiany w JS dla tytułu). */
+.story-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.2rem;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .8s ease, visibility 0s linear .8s;
+}
+.story-layer.is-visible { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .8s ease, visibility 0s; }
+
+.story-skip {
+    position: absolute;
+    z-index: 3;
+    top: .9rem;
+    right: .9rem;
+    padding: .4rem .8rem;
+    border: 1px solid rgb(255 255 255 / .25);
+    border-radius: .5rem;
+    background: rgb(10 15 22 / .6);
+    color: #aab7c5;
+    font: inherit;
+    font-size: .8rem;
+    cursor: pointer;
+}
+.story-skip:hover { color: #fff; border-color: #fff; }
+.story-root[data-stage="reading"] .story-skip,
+.story-root[data-stage="end"] .story-skip,
+.story-root[data-stage="idle"] .story-skip { display: none; }
+
+/* Tytuł: pojawia się, stoi, potem dramatycznie zanika (rozjeżdżają się litery, rozmycie). */
+.story-title { text-align: center; opacity: 0; transform: scale(.97); filter: blur(6px); }
+.story-title.is-in {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+    transition: opacity var(--fade, 2s) ease, transform calc(var(--fade, 2s) * 2) ease-out, filter var(--fade, 2s) ease;
+}
+.story-title.is-out {
+    opacity: 0;
+    transform: scale(1.12);
+    filter: blur(10px);
+    transition: opacity calc(var(--fade, 2s) * 1.6) ease-in, transform calc(var(--fade, 2s) * 1.8) ease-in, filter calc(var(--fade, 2s) * 1.6) ease-in;
+}
+.story-title__text { margin: 0; font-size: clamp(2.2rem, 7vw, 4.6rem); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 0 28px rgb(255 90 90 / .45); }
+.story-title.is-out .story-title__text { letter-spacing: .5em; transition: letter-spacing calc(var(--fade, 2s) * 1.8) ease-in; }
+.story-title__sub { margin: .8rem 0 0; color: #aab7c5; font-size: clamp(.9rem, 2vw, 1.2rem); letter-spacing: .3em; text-transform: uppercase; }
+.story-title__sub:empty { display: none; }
+
+/* Czat: okno jak w komunikatorze, wiadomości pojawiają się od dołu. */
+.story-layer--chat { gap: .8rem; }
+.chat-slot { display: flex; width: min(36rem, 100%); height: min(78%, 42rem); }
+.chat {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid #2b3a4b;
+    border-radius: 1rem;
+    background: #0e1520;
+    box-shadow: 0 1rem 3rem rgb(0 0 0 / .55);
+    font-size: clamp(.85rem, 1.6vw, 1rem);
+}
+.chat__header { display: flex; align-items: center; gap: .7rem; padding: .7rem .9rem; border-bottom: 1px solid #223142; background: #141f2d; }
+.chat__info { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
+.chat__name { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.chat__status { color: #8c98a6; font-size: .78em; }
+.chat__topic { padding: .2rem .6rem; border: 1px solid #3e5166; border-radius: 999px; color: #ffd27a; font-size: .72em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.chat__avatar {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 1.9em;
+    height: 1.9em;
+    border-radius: 50%;
+    background: #79d7c4;
+    color: #0c1218;
+    font-size: .9em;
+    font-weight: 800;
+}
+.chat__avatar--group { width: 2.4em; height: 2.4em; background: linear-gradient(135deg, #3b6ea5, #6a4aa0); color: #fff; }
+
+.chat__list { display: flex; flex: 1; flex-direction: column; gap: .3rem; padding: .8rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #2b3a4b transparent; }
+.chat__list > :first-child { margin-top: auto; }
+
+.chat-msg { display: flex; align-items: flex-end; gap: .45rem; max-width: 86%; animation: chat-pop .28s ease-out; }
+.chat-msg.is-follow { margin-top: -.05rem; }
+.chat-msg.is-follow .chat__avatar { visibility: hidden; }
+.chat-msg.is-me { align-self: flex-end; flex-direction: row-reverse; }
+.chat-msg__bubble { display: flex; flex-direction: column; gap: .1rem; padding: .45rem .7rem .35rem; border-radius: .9rem .9rem .9rem .25rem; background: #1b2738; line-height: 1.35; }
+.chat-msg.is-me .chat-msg__bubble { border-radius: .9rem .9rem .25rem .9rem; background: #1f6b61; }
+.chat-msg__author { font-size: .78em; font-weight: 800; }
+.chat-msg__text { overflow-wrap: anywhere; }
+.chat-msg__time { align-self: flex-end; color: rgb(255 255 255 / .45); font-size: .66em; }
+.chat-sys { align-self: center; max-width: 90%; margin: .35rem 0; padding: .2rem .75rem; border-radius: 999px; background: #17212d; color: #98a6b5; font-size: .78em; text-align: center; animation: chat-pop .28s ease-out; }
+.chat-msg.is-instant, .chat-sys.is-instant { animation: none; }
+@keyframes chat-pop { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+
+.chat__typing { height: 1.5rem; padding: 0 1rem; color: #8c98a6; font-size: .78em; visibility: hidden; }
+.chat__typing.is-on { visibility: visible; }
+.chat__dots { display: inline-flex; gap: .2rem; margin-left: .35rem; vertical-align: middle; }
+.chat__dots i { width: .32rem; height: .32rem; border-radius: 50%; background: #8c98a6; animation: chat-dot 1s infinite ease-in-out; }
+.chat__dots i:nth-child(2) { animation-delay: .15s; }
+.chat__dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes chat-dot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+.chat__composer { display: flex; align-items: center; gap: .6rem; margin: 0 .8rem .8rem; padding: .55rem .9rem; border-radius: 999px; background: #17212d; color: #66778a; font-size: .9em; }
+.chat__input { flex: 1; }
+.chat__send { color: #3e5166; }
+
+/* "Grupa usunięta": czat ciemnieje, na środku wielki napis. */
+.chat__banner { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(5 7 11 / .78); color: #ff8a8a; font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: 0; pointer-events: none; transition: opacity .9s ease; }
+.chat.is-deleted .chat__banner { opacity: 1; }
+.chat.is-deleted .chat__status { color: #ff8a8a; }
+
+.story-next { width: min(100%, 14rem); }
+.story-next[hidden] { display: none; }
+
+/* Scena z policją: obraz na całą szerokość (pixel art, ostre piksele) i podpis. */
+.story-layer--police { gap: 0; padding: 0; background: #000; }
+.story-police__canvas,
+.story-police__image { width: min(100%, calc((100vh - 10.5rem) * 16 / 9)); aspect-ratio: 16 / 9; image-rendering: pixelated; background: #000 center / cover no-repeat; }
+.story-police__canvas[hidden],
+.story-police__image[hidden] { display: none; }
+.story-police__caption { min-height: 6.5rem; max-width: 46rem; margin: 0; padding: .8rem 1.2rem 0; color: #dbe4ee; font-size: clamp(.9rem, 1.5vw, 1.1rem); line-height: 1.5; text-align: center; opacity: 0; transition: opacity 1.2s ease; }
+.story-police__caption.is-in { opacity: 1; }
+
+/* Zakończenie: "Koniec" na górze, morał na środku, przycisk na dole. */
+.story-layer--end { justify-content: space-between; padding: clamp(1rem, 4vh, 2.5rem) 1.5rem; }
+.story-end__title { margin: 0; font-size: clamp(2rem, 6vw, 3.6rem); font-weight: 800; letter-spacing: .3em; text-indent: .3em; text-transform: uppercase; }
+.story-end__text { min-height: 0; max-width: 46rem; margin: 0; color: #dbe4ee; font-size: clamp(.9rem, 1.6vw, 1.1rem); line-height: 1.55; text-align: center; white-space: pre-line; overflow-y: auto; }
+.story-end__button { width: min(100%, 17rem); }

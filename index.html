@@ -39,7 +39,9 @@
                 <h3 id="menu-main-title" class="menu__title">Gra przeglądarkowa</h3>
                 <p class="menu__text">Wybierz poziom</p>
                 <div class="level-list" id="level-list"></div>
+                <p class="menu__hint" id="debug-hint" hidden>Tryb debug: wszystkie poziomy są odblokowane (klawisz /)</p>
                 <button class="menu__button" type="button" data-action="editor">Edytor poziomów</button>
+                <button class="menu__link" type="button" data-action="reset-progress">Resetuj postęp</button>
             </div>
 
             <!-- Menu pauzy (Esc podczas gry) -->
@@ -64,15 +66,9 @@
                 </div>
             </div>
 
-            <!-- Ekran fabuły (prolog, przerywniki między poziomami, epilog). Treść: src/data/story.json -->
-            <div class="menu" data-screen="story" data-texture="storyBackground" role="dialog" aria-labelledby="story-title" hidden>
-                <div class="story">
-                    <p class="story__label">Fabuła</p>
-                    <h3 class="menu__title story__title" id="story-title"></h3>
-                    <div class="story__image" id="story-image" data-texture="storyImage" aria-hidden="true">miejsce na ilustrację</div>
-                    <p class="story__text" id="story-text"></p>
-                    <button class="menu__button menu__button--primary" type="button" data-action="story-next">Dalej</button>
-                </div>
+            <!-- Ekran fabuły: tytuł, czat grupowy, scena z policją i zakończenie. Warstwy buduje storyplayer.js, treść: src/data/story.json -->
+            <div class="menu" data-screen="story" role="dialog" aria-label="Fabuła" hidden>
+                <div class="story-root" id="story-root"></div>
             </div>
 
             <!-- Ekran przegranej -->

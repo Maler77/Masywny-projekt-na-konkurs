@@ -7,10 +7,12 @@ import { LEVELS } from "./levels.js";
 import { createQuestionQueue, loadQuestions, QUESTION_CATEGORIES } from "./questions.js";
 import { createEditor } from "./editor.js";
 import { loadJsonLevels, mergeJsonLevels, normalizeLevel, PANEL_QUESTION_CATEGORY } from "./levelstore.js";
-import { loadStory, storyAfterLevel as storyEntryAfter } from "./story.js";
+import { loadStory, storyChapter } from "./story.js";
+import { createStoryPlayer } from "./storyplayer.js";
+import { isCompleted, isUnlocked, markCompleted, resetProgress } from "./progress.js";
 
-// Ekrany fabuły (prolog, przerywniki po poziomach, epilog; teksty w src/data/story.json).
-// Ustaw false, żeby wyłączyć je w całości (np. na czas testowania poziomów).
+// Fabuła po ukończeniu poziomów (tytuł, czat grupowy, policja, zakończenie; treść w src/data/story.json).
+// Ustaw false, żeby wyłączyć ją w całości (np. na czas testowania poziomów).
 const STORY_ENABLED = true;
 const story = await loadStory();
 
@@ -60,8 +62,15 @@ function bombCountLabel(count) {
     return `${count} bomb`;
 }
 
+// Karty poziomów (do odświeżania blokad i przycisków fabuły): { card, replay, level, index }.
+const levelCards = [];
+
 function buildLevelList() {
     LEVELS.forEach((level, index) => {
+        // Kontener: karta poziomu + mały przycisk "fabuła" w rogu (przycisk nie może być wewnątrz przycisku).
+        const wrap = document.createElement("div");
+        wrap.className = "level-card-wrap";
+
         const card = document.createElement("button");
         card.type = "button";
         card.className = "menu__button level-card";
@@ -94,9 +103,39 @@ function buildLevelList() {
                 ? `BOSS · ${level.bombs.length} ${level.bombs.length === 1 ? "panel" : "panele"} · ${formatTime(level.timeLimit)}`
                 : `${bombCountLabel(level.bombs.length)} · ${formatTime(level.timeLimit)}`;
 
-        card.append(thumb, name, subtitle, info);
-        levelList.append(card);
+        const status = document.createElement("span");
+        status.className = "level-card__status";
+
+        card.append(thumb, name, subtitle, info, status);
+
+        const replay = document.createElement("button");
+        replay.type = "button";
+        replay.className = "level-card__replay";
+        replay.dataset.action = "replay-story";
+        replay.dataset.level = String(index);
+        replay.textContent = "💬 Fabuła";
+        replay.title = "Odtwórz fabułę tego poziomu";
+        replay.hidden = true;
+
+        wrap.append(card, replay);
+        levelList.append(wrap);
+        levelCards.push({ card, replay, status, level, index });
     });
+}
+
+// Ustawia blokady i przyciski fabuły według postępu gracza. W trybie debug wszystko jest odblokowane.
+// Wołane przy każdym wejściu do menu oraz przy przełączeniu debugu.
+function refreshLevelList() {
+    for (const { card, replay, status, level, index } of levelCards) {
+        const unlocked = debug || isUnlocked(LEVELS, index);
+        const done = isCompleted(level.name);
+        card.disabled = !unlocked;
+        card.classList.toggle("is-locked", !unlocked);
+        card.classList.toggle("is-complete", done);
+        status.textContent = !unlocked ? "🔒 Ukończ poprzedni poziom" : done ? "✓ Ukończony" : "";
+        replay.hidden = !(STORY_ENABLED && (done || debug) && storyChapter(story, index));
+    }
+    document.querySelector("#debug-hint").hidden = !debug;
 }
 
 buildLevelList();
@@ -113,9 +152,6 @@ const loseReason = document.querySelector("#lose-reason");
 const winSummary = document.querySelector("#win-summary");
 const winTime = document.querySelector("#win-time");
 const winNext = document.querySelector("#win-next");
-const storyTitle = document.querySelector("#story-title");
-const storyText = document.querySelector("#story-text");
-const storyImage = document.querySelector("#story-image");
 const LETTERS = ["A", "B", "C"];
 
 // Zła odpowiedź przy bombie zabiera tyle sekund z timera poziomu (a nie kończy gry). Zła odpowiedź
@@ -156,7 +192,8 @@ const menu = createMenu({
     play: (data) => playFromMenu(Number(data.level)),    // karta poziomu w menu głównym
     retry: () => startGame(currentLevel),                // "Spróbuj ponownie" po przegranej
     next: nextAfterWin,                                  // "Następny poziom" po wygranej
-    "story-next": finishStory,                           // "Dalej" na ekranie fabuły
+    "replay-story": (data) => replayStory(Number(data.level)), // "Fabuła" w rogu karty ukończonego poziomu
+    "reset-progress": resetProgressFromMenu,             // "Resetuj postęp" w menu głównym
     resume: resumeGame,
     quit: quitToMenu,
     answer: (data) => answerBomb(Number(data.index)),
@@ -174,7 +211,11 @@ function setState(next) {
     document.body.classList.toggle("cursor-hidden", next === "playing");
 
     if (next === "playing") menu.hide();
-    else menu.show(SCREEN_FOR_STATE[next]);
+    else {
+        if (next === "menu") refreshLevelList(); // blokady i przyciski fabuły według aktualnego postępu
+        menu.show(SCREEN_FOR_STATE[next]);
+        if (next === "story") storyPlayer.focus(); // fokus na ekranie fabuły, żeby Spacja nie klikała przycisku "Pomiń"
+    }
 }
 
 // ---------- Edytor poziomów (editor.js) ----------
@@ -232,53 +273,53 @@ function endEditorTest() {
 }
 
 // ---------- Fabuła ----------
-// Ekran fabuły pokazuje wpis ze story.json, a po kliknięciu "Dalej" (albo Enter / Esc) wykonuje `then`.
-let storyThen = null;
+// Po ukończeniu poziomu N (od 0) pokazuje się rozdział story.chapters[N] (czat grupowy itd., patrz story.js).
+// Przed rozdziałem 0 pojawia się jeszcze tytuł. Zakończenie ostatniego rozdziału kończy się przyciskiem "Menu główne".
+const storyPlayer = createStoryPlayer(document.querySelector("#story-root"), story);
 
-function showStory(entry, then) {
-    storyThen = then;
-    storyTitle.textContent = entry.title;
-    storyText.textContent = entry.text;
-    storyImage.classList.toggle("has-image", Boolean(entry.image));
-    if (entry.image) {
-        storyImage.style.setProperty("--texture", `url("${new URL(entry.image, document.baseURI).href}")`);
-        storyImage.style.setProperty("--texture-size", "cover");
-    } else {
-        storyImage.style.removeProperty("--texture");
+// Odtwarza rozdział po poziomie `levelIndex` (albo od razu wywołuje `then`, gdy poziom nie ma fabuły).
+function playChapter(levelIndex, then, { replay = false } = {}) {
+    const chapter = STORY_ENABLED && !testingFromEditor ? storyChapter(story, levelIndex) : null;
+    if (!chapter) {
+        then();
+        return;
     }
     setState("story");
+    storyPlayer.play(chapter, levelIndex, {
+        showTitle: levelIndex === 0,
+        nextLabel: replay ? "Zamknij" : "Dalej",
+        onDone: then,
+    });
 }
 
-function finishStory() {
-    if (state !== "story") return;
-    const then = storyThen;
-    storyThen = null;
-    then?.();
+// Przycisk "Fabuła" na karcie ukończonego poziomu: odtwarza rozdział i wraca do menu.
+function replayStory(levelIndex) {
+    playChapter(levelIndex, () => setState("menu"), { replay: true });
 }
 
-// Który wpis fabuły pokazać po ukończeniu aktualnego poziomu (przed następnym albo jako epilog).
-function storyAfterLevel() {
-    if (!STORY_ENABLED || testingFromEditor) return null;
-    const hasNext = currentLevel + 1 < LEVELS.length;
-    return (hasNext ? storyEntryAfter(story, currentLevel) : story.epilogue) ?? null;
-}
-
-// Karta poziomu w menu głównym: przy starcie od pierwszego poziomu najpierw prolog.
+// Karta poziomu w menu głównym (zablokowanego poziomu nie da się uruchomić, poza trybem debug).
 function playFromMenu(levelIndex) {
-    if (STORY_ENABLED && levelIndex === 0 && story.prologue) {
-        showStory(story.prologue, () => startGame(0));
-    } else {
-        startGame(levelIndex);
-    }
+    if (!debug && !isUnlocked(LEVELS, levelIndex)) return;
+    startGame(levelIndex);
 }
 
-// "Następny poziom" po wygranej: przerywnik fabularny, potem kolejny poziom (po ostatnim: epilog i menu).
+// "Resetuj postęp" w menu głównym: znów odblokowany tylko pierwszy poziom.
+function resetProgressFromMenu() {
+    if (!window.confirm("Zresetować postęp? Poziomy zostaną znów zablokowane.")) return;
+    resetProgress();
+    refreshLevelList();
+}
+
+// Czy po wygranej jest rozdział fabuły do pokazania.
+function hasStoryAfterLevel() {
+    return STORY_ENABLED && !testingFromEditor && Boolean(storyChapter(story, currentLevel));
+}
+
+// "Następny poziom" / "Dalej" po wygranej: rozdział fabuły, potem kolejny poziom (po ostatnim: menu główne).
 function nextAfterWin() {
     const hasNext = currentLevel + 1 < LEVELS.length;
-    const entry = storyAfterLevel();
     const proceed = () => (hasNext ? startGame(currentLevel + 1) : quitToMenu());
-    if (entry) showStory(entry, proceed);
-    else if (hasNext) proceed();
+    playChapter(currentLevel, proceed);
 }
 
 // Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
@@ -438,15 +479,16 @@ function loseGame(reason) {
 function winGame() {
     const hasNext = currentLevel + 1 < LEVELS.length;
     const name = LEVELS[currentLevel].name;
+    if (!testingFromEditor) markCompleted(name); // odblokowuje następny poziom w menu
     const panel = LEVELS[currentLevel].mode !== "bombs" && LEVELS[currentLevel].mode !== undefined;
     winSummary.textContent = hasNext
         ? `${name} ukończony! ${panel ? (LEVELS[currentLevel].mode === "boss" ? "Wszystkie panele rozbrojone." : "Panel rozbrojony.") : "Wszystkie bomby rozbrojone."}`
         : `${name} ukończony! To był ostatni poziom, gratulacje!`;
     winTime.textContent = `Pozostały czas: ${formatTime(game.timeLeft)}`;
-    // Po ostatnim poziomie przycisk prowadzi do epilogu (o ile jest); inaczej go nie ma.
-    const epilogue = !hasNext && storyAfterLevel() !== null;
-    winNext.hidden = !hasNext && !epilogue;
-    winNext.textContent = hasNext ? "Następny poziom" : "Epilog";
+    // Po ostatnim poziomie przycisk prowadzi do zakończenia fabuły (o ile jest); inaczej go nie ma.
+    const ending = !hasNext && hasStoryAfterLevel();
+    winNext.hidden = !hasNext && !ending;
+    winNext.textContent = hasNext ? "Następny poziom" : "Zakończenie";
     setState("won");
 }
 
@@ -472,13 +514,16 @@ function frame(now) {
     // dt = czas od poprzedniej klatki w sekundach (z limitem, np. po powrocie z innej karty).
     const dt = Math.min(rawDt, 0.05);
 
-    if (input.debugPressed()) debug = !debug;
+    if (input.debugPressed()) {
+        debug = !debug;
+        if (state === "menu") refreshLevelList(); // debug odblokowuje wszystkie poziomy
+    }
 
     // Esc pauses or resumes gameplay; an open bomb question remains active while paused.
     if (input.escapePressed() && performance.now() >= ignoreEscapeUntil) {
         if (state === "playing" || state === "bomb") pauseGame();
         else if (state === "paused") resumeGame();
-        else if (state === "story") finishStory();
+        else if (state === "story") storyPlayer.skip();
     }
 
     if (state === "playing") {

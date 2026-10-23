@@ -179,8 +179,20 @@ Wskazówki do projektowania poziomu z panelem: pole widzenia przeciwnika sięga 
 
 W edytorze po wybraniu trybu „Panel” zostaje jedna bomba (nowa zastępuje starą), pole „Pytania” znika (zawsze trudne), a pojawia się „Spadochroniarze”.
 
-## Fabuła między poziomami
+## Fabuła i postęp
 
-Teksty ekranów fabularnych są w `src/data/story.json`: `prologue` (przed pierwszym poziomem), `afterLevel` (lista; `afterLevel[0]` pokazuje się po 1. poziomie, `[1]` po 2. itd., w kolejności poziomów w menu) i `epilogue` (po ostatnim poziomie). Każdy wpis to `{ "title": "...", "text": "...", "image": "assets/story/cos.png" }`; `title` i `image` są opcjonalne (bez `image` widać ramkę „miejsce na ilustrację”), a `\n\n` w `text` oddziela akapity. Wpisy w pliku to na razie placeholdery. Jeśli poziomów jest więcej niż wpisów w `afterLevel`, brakujące przerywniki dostają automatyczny placeholder „Rozdział N”; wpis `null` wyłącza przerywnik po danym poziomie. Przerywnik pokazuje się po kliknięciu „Następny poziom” na ekranie wygranej, a po ostatnim poziomie przycisk „Epilog” prowadzi do epilogu i menu. Prolog pojawia się po wybraniu karty pierwszego poziomu z menu. Całą fabułę wyłączysz stałą `STORY_ENABLED` na górze `src/js/main.js`. Ekran fabuły ma tło `storyBackground` i ramkę `storyImage` w `textures.js`.
+Gra opowiada historię radykalizacji: po ukończeniu każdego poziomu pokazuje się jeden rozdział, czyli rozmowa w czacie grupowym (wiadomości pojawiają się z przerwami, jak na prawdziwym czacie, z „Ola pisze…”). Tematy po kolei: 1 „zwykła grupa”, 2 „my kontra oni”, 3 „izolacja”, 4 „eskalacja”, 5 „działanie” (plan ataku, który gracz udaremniał przez całą grę), 6 „konsekwencje”. Przed rozdziałem 1 pojawia się jeszcze ekran z tytułem gry, który dramatycznie zanika. Rozdział 6 pokazuje czat z napisem „Grupa usunięta”, potem scenę z policją i radiowozem (pixel art rysowany kodem w `src/js/policescene.js`), a na końcu ekran „Koniec” z morałem i przyciskiem „Menu główne”.
 
-Docelowa kolejność (3 poziomy z bombami, 2 z panelem, boss) wynika z kolejności w menu: najpierw poziomy z `levels.js`, potem pliki JSON po nazwie pliku. Żeby ustawić kolejność, nazywaj pliki tak, by sortowały się po kolei (np. `01-…json`, `02-…json`).
+**Wszystko edytujesz w `src/data/story.json`** (zwykły edytor tekstu, pełny opis formatu jest w komentarzu na górze `src/js/story.js`). Najważniejsze pola:
+
+- `title`: tytuł gry (`text`, `subtitle`, `fade` = czas pojawiania/znikania w sekundach, `hold` = jak długo stoi).
+- `me`: imię osoby, z której telefonu patrzymy (jej wiadomości są po prawej, zielone). `people`: kolory autorów. `group`: domyślna nazwa i podpis grupy. `defaultDelay`: domyślna przerwa przed wiadomością.
+- `chapters`: lista rozdziałów, `chapters[0]` po 1. poziomie, `chapters[1]` po 2. itd. (kolejność poziomów w menu). Rozdział ma `topic` (temat widoczny w nagłówku czatu), opcjonalnie `group` i `status` (nazwa grupy i podpis tylko w tym rozdziale), `messages`, opcjonalnie `auto` (liczba sekund, po których gra sama przechodzi dalej zamiast czekać na „Dalej”) i `then` (sceny po czacie).
+- wiadomość w `messages`: `author` (`"system"` = szary wiersz na środku), `text`, **`delay` = przerwa w sekundach przed tą wiadomością**, opcjonalnie `typing` (jak długo widać „pisze…”), `time` (godzina pod wiadomością) i `banner: true` (wielki napis na czacie, np. „Grupa usunięta”).
+- `then`: `{ "scene": "police", "duration": 8, "caption": "podpis" }` (opcjonalnie `"image": "assets/story/policja.png"` zamiast rysowanej sceny) oraz `{ "scene": "end", "title": "Koniec", "text": "morał", "button": "Menu główne" }`.
+
+Poziom bez rozdziału (za mało wpisów w `chapters`) po prostu idzie dalej bez fabuły. Podczas odtwarzania kliknięcie albo Spacja pokazuje następną wiadomość od razu, a Esc / „Pomiń” przeskakuje dalej. Całą fabułę wyłączysz stałą `STORY_ENABLED` na górze `src/js/main.js`.
+
+**Blokada poziomów.** W menu głównym kolejny poziom jest zablokowany, dopóki gracz nie ukończy poprzedniego (kolejność jak na liście w menu). Ukończone poziomy zapamiętuje przeglądarka (`localStorage`, `src/js/progress.js`, po nazwie poziomu), a „Resetuj postęp” pod listą poziomów zaczyna od nowa. **W trybie debug (klawisz `/`) wszystkie poziomy są odblokowane.** Na karcie ukończonego poziomu (w debugu na każdej) w rogu jest przycisk „💬 Fabuła”, który odtwarza jego rozdział, a potem wraca do menu.
+
+Kolejność poziomów w menu: najpierw poziomy z `levels.js`, potem pliki JSON w kolejności z `index.json`; plik JSON o tej samej nazwie co poziom z kodu zastępuje go. Poziomy 2 i 3 z `levels.js` zostały usunięte, więc obecnie jest sześć poziomów (zgodnie z sześcioma rozdziałami fabuły).
