@@ -4,9 +4,12 @@
 //  zakończenie) jest w storyplayer.js. Całość opisana jest też w README.md, sekcja "Fabuła".
 //
 //  STRUKTURA story.json
-//    title          ekran tytułowy pokazywany raz, na początku fabuły po 1. poziomie (opcjonalnie):
-//                   { "text": "Tytuł", "subtitle": "podpis", "fade": 2.2, "hold": 2.4 }
+//    title          ekran tytułowy (opcjonalnie): { "text": "Tytuł", "subtitle": "podpis", "fade": 2.2, "hold": 2.4 }
 //                   fade = czas pojawiania się i znikania (s), hold = jak długo tytuł stoi (s)
+//    showTitle      true = tytuł pokazuje się raz, na początku fabuły po 1. poziomie; false (domyślnie) = nigdzie
+//                   się nie pokazuje (wpis "title" może zostać w pliku na później)
+//    topicIntro     { "fade": 1.6, "hold": 1.2 } jak długo temat rozdziału pojawia się (fade) i stoi samotnie (hold),
+//                   zanim pojawi się okno grupy (s)
 //    me             imię osoby, z której telefonu patrzymy (jej wiadomości są po prawej stronie)
 //    defaultDelay   domyślna przerwa przed wiadomością (s), gdy wiadomość nie ma własnego "delay"
 //    group          { "name": "...", "status": "6 uczestników" } nagłówek czatu (domyślny dla wszystkich rozdziałów)
@@ -15,7 +18,7 @@
 //                   (kolejność poziomów w menu głównym). Poziom bez rozdziału po prostu idzie dalej bez fabuły.
 //
 //  ROZDZIAŁ
-//    topic          temat rozdziału, widoczny w nagłówku czatu (np. "zwykła grupa")
+//    topic          temat rozdziału (np. "zwykła grupa"): duży napis nad oknem grupy, który pojawia się jako pierwszy
 //    group, status  (opcjonalnie) nazwa grupy i podpis tylko dla tego rozdziału
 //    messages       lista wiadomości (patrz niżej)
 //    auto           (opcjonalnie) liczba sekund; po ostatniej wiadomości gra sama przechodzi dalej
@@ -144,6 +147,11 @@ export function normalizeStory(raw) {
     return {
         loaded: true,
         title,
+        showTitle: raw.showTitle === true && title !== null,
+        topicIntro: {
+            fade: num(raw.topicIntro?.fade, 1.6, 0.2, 10),
+            hold: num(raw.topicIntro?.hold, 1.2, 0, 30),
+        },
         me: isText(raw.me) ? raw.me : "",
         people,
         chapters, // wpis null = ten poziom nie ma fabuły
@@ -161,7 +169,7 @@ export function storyChapter(story, index) {
 
 // Wczytuje fabułę. Zawsze zwraca obiekt z polem loaded (false, gdy nie ma pliku albo jest błędny).
 export async function loadStory() {
-    const empty = { loaded: false, title: null, me: "", people: {}, chapters: [], colorOf: autoColor };
+    const empty = { loaded: false, title: null, showTitle: false, topicIntro: { fade: 1.6, hold: 1.2 }, me: "", people: {}, chapters: [], colorOf: autoColor };
     try {
         const response = await fetch(STORY_URL, { cache: "no-cache" });
         if (!response.ok) return empty;

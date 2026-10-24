@@ -385,7 +385,35 @@ body.cursor-hidden .game { cursor: none; }
 
 /* Czat: okno jak w komunikatorze, wiadomości pojawiają się od dołu. */
 .story-layer--chat { gap: .8rem; }
-.chat-slot { display: flex; width: min(36rem, 100%); height: min(78%, 42rem); }
+/* Temat rozdziału: duży napis nad oknem grupy. Pojawia się pierwszy (jak tytuł), okno grupy dopiero po nim. */
+.story-topic {
+    margin: 0;
+    font-size: clamp(1.5rem, 4.4vw, 2.9rem);
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-align: center;
+    text-shadow: 0 0 24px rgb(255 90 90 / .4);
+    text-transform: uppercase;
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(.97);
+}
+.story-topic.is-in {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+    transition: opacity var(--fade, 1.6s) ease, filter var(--fade, 1.6s) ease, transform calc(var(--fade, 1.6s) * 2) ease-out;
+}
+.story-topic:empty { display: none; }
+.chat-slot {
+    display: flex;
+    width: min(36rem, 100%);
+    height: clamp(14rem, calc(100% - 9.5rem), 42rem);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity .9s ease, transform .9s ease;
+}
+.chat-slot.is-in { opacity: 1; transform: none; }
 .chat {
     position: relative;
     display: flex;
@@ -402,7 +430,6 @@ body.cursor-hidden .game { cursor: none; }
 .chat__info { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
 .chat__name { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .chat__status { color: #8c98a6; font-size: .78em; }
-.chat__topic { padding: .2rem .6rem; border: 1px solid #3e5166; border-radius: 999px; color: #ffd27a; font-size: .72em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .chat__avatar {
     display: inline-grid;
     flex: none;
@@ -467,3 +494,5 @@ body.cursor-hidden .game { cursor: none; }
 .story-end__title { margin: 0; font-size: clamp(2rem, 6vw, 3.6rem); font-weight: 800; letter-spacing: .3em; text-indent: .3em; text-transform: uppercase; }
 .story-end__text { min-height: 0; max-width: 46rem; margin: 0; color: #dbe4ee; font-size: clamp(.9rem, 1.6vw, 1.1rem); line-height: 1.55; text-align: center; white-space: pre-line; overflow-y: auto; }
 .story-end__button { width: min(100%, 17rem); }
+/* Panel rozbrajania nie zatrzymuje gry: tło jest lżejsze i bez rozmycia, żeby było widać, co dzieje się na mapie. */
+.menu[data-screen="bomb"] { background: rgb(10 15 22 / .35); backdrop-filter: none; }

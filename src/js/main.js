@@ -191,7 +191,8 @@ const SCREEN_FOR_STATE = {
 const menu = createMenu({
     play: (data) => playFromMenu(Number(data.level)),    // karta poziomu w menu głównym
     retry: () => startGame(currentLevel),                // "Spróbuj ponownie" po przegranej
-    next: nextAfterWin,                                  // "Następny poziom" po wygranej
+    next: nextLevel,                                     // "Następny poziom" po wygranej (i fabule)
+    restart: () => startGame(currentLevel),              // "Zacznij od początku" w menu pauzy
     "replay-story": (data) => replayStory(Number(data.level)), // "Fabuła" w rogu karty ukończonego poziomu
     "reset-progress": resetProgressFromMenu,             // "Resetuj postęp" w menu głównym
     resume: resumeGame,
@@ -285,8 +286,8 @@ function playChapter(levelIndex, then, { replay = false } = {}) {
         return;
     }
     setState("story");
-    storyPlayer.play(chapter, levelIndex, {
-        showTitle: levelIndex === 0,
+    storyPlayer.play(chapter, {
+        showTitle: story.showTitle && levelIndex === 0, // tytuł z story.json tylko, gdy "showTitle": true
         nextLabel: replay ? "Zamknij" : "Dalej",
         onDone: then,
     });
@@ -315,11 +316,9 @@ function hasStoryAfterLevel() {
     return STORY_ENABLED && !testingFromEditor && Boolean(storyChapter(story, currentLevel));
 }
 
-// "Następny poziom" / "Dalej" po wygranej: rozdział fabuły, potem kolejny poziom (po ostatnim: menu główne).
-function nextAfterWin() {
-    const hasNext = currentLevel + 1 < LEVELS.length;
-    const proceed = () => (hasNext ? startGame(currentLevel + 1) : quitToMenu());
-    playChapter(currentLevel, proceed);
+// "Następny poziom" na ekranie wygranej (rozdział fabuły był już pokazany zaraz po wygranej).
+function nextLevel() {
+    if (currentLevel + 1 < LEVELS.length) startGame(currentLevel + 1);
 }
 
 // Wczytaj wybrany poziom od początku (pełny reset: gracz, bomby, timer).
@@ -398,7 +397,7 @@ function quitToMenu() {
 
 // Request the browser to keep Escape inside the game while fullscreen is active.
 document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && isFullscreen() && ["playing", "paused", "bomb"].includes(state)) {
+    if (event.key === "Escape" && isFullscreen() && ["playing", "paused", "bomb", "story", "won", "lost"].includes(state)) {
         event.preventDefault();
     }
 }, true);
@@ -444,6 +443,11 @@ function openBomb(bomb) {
     setState("bomb");
 }
 
+// "Pusty" input: gra dostaje go zamiast klawiszy, gdy otwarty jest panel rozbrajania (postać stoi, reszta świata żyje).
+const idleInput = new Proxy({}, {
+    get: (_, name) => (name === "moveX" || name === "grappleLengthChange" ? () => 0 : name === "answerPressed" ? () => -1 : () => false),
+});
+
 // Zła odpowiedź = kara czasowa; po rozbrojeniu wszystkich bomb trzeba jeszcze dotrzeć do wyjścia po prawej.
 function answerBomb(index) {
     if (state !== "bomb" || !activeBomb || !activeQuestion || !Number.isInteger(index) || index < 0 || index > 2) return;
@@ -469,6 +473,14 @@ function answerBomb(index) {
     }
 }
 
+// Zamyka okno z pytaniem bez odpowiadania (Esc albo Q). Pytanie dla tej bomby zostaje to samo przy ponownym otwarciu.
+function closeBomb() {
+    if (state !== "bomb") return;
+    activeBomb = null;
+    activeQuestion = null;
+    setState("playing");
+}
+
 function loseGame(reason) {
     activeBomb = null;
     activeQuestion = null;
@@ -485,11 +497,11 @@ function winGame() {
         ? `${name} ukończony! ${panel ? (LEVELS[currentLevel].mode === "boss" ? "Wszystkie panele rozbrojone." : "Panel rozbrojony.") : "Wszystkie bomby rozbrojone."}`
         : `${name} ukończony! To był ostatni poziom, gratulacje!`;
     winTime.textContent = `Pozostały czas: ${formatTime(game.timeLeft)}`;
-    // Po ostatnim poziomie przycisk prowadzi do zakończenia fabuły (o ile jest); inaczej go nie ma.
-    const ending = !hasNext && hasStoryAfterLevel();
-    winNext.hidden = !hasNext && !ending;
-    winNext.textContent = hasNext ? "Następny poziom" : "Zakończenie";
-    setState("won");
+    winNext.hidden = !hasNext;
+    // Fabuła pokazuje się od razu po wygranej, a dopiero po niej ekran z przyciskami (następny poziom, menu).
+    // Po ostatnim poziomie zakończenie fabuły kończy się przyciskiem "Menu główne", więc ekranu wygranej już nie ma.
+    const hasStory = hasStoryAfterLevel();
+    playChapter(currentLevel, () => (hasNext || !hasStory ? setState("won") : quitToMenu()));
 }
 
 // Gra sama się zatrzymuje, gdy przełączysz kartę lub okno.
@@ -519,50 +531,59 @@ function frame(now) {
         if (state === "menu") refreshLevelList(); // debug odblokowuje wszystkie poziomy
     }
 
-    // Esc pauses or resumes gameplay; an open bomb question remains active while paused.
+    // Esc: w grze pauza; w pauzie najpierw wyłącza pełny ekran (jeśli jest włączony), a kolejny Esc wznawia grę;
+    // w fabule przeskakuje dalej. Panel rozbrajania zamyka się niżej (Esc albo Q), bo gra się wtedy nie zatrzymuje.
     if (input.escapePressed() && performance.now() >= ignoreEscapeUntil) {
-        if (state === "playing" || state === "bomb") pauseGame();
-        else if (state === "paused") resumeGame();
-        else if (state === "story") storyPlayer.skip();
+        if (state === "playing") pauseGame();
+        else if (state === "paused") {
+            if (isFullscreen()) exitFullscreen();
+            else resumeGame();
+        } else if (state === "story") storyPlayer.skip();
     }
 
-    if (state === "playing") {
-        const updateResult = game.update(dt, input);
-        if (updateResult.dashed && updateResult.dashTarget) {
-            game.cuffEnemy(updateResult.dashTarget, "dash", { fromBehind: updateResult.dashFromBehind });
-        }
+    if (state === "playing" || state === "bomb") {
+        // Gra toczy się dalej także przy otwartym panelu rozbrajania (przeciwnicy się ruszają, czas leci),
+        // ale postać stoi: wtedy dostaje "pusty" input zamiast klawiszy gracza.
+        const panelOpen = state === "bomb";
+        const updateResult = game.update(dt, panelOpen ? idleInput : input);
 
-        if (input.interactPressed()) {
-            const enemy = game.nearbyEnemy("interact");
-            if (enemy && game.cuffEnemy(enemy, "interact")) {
-                // Cuffing takes this E press; bombs remain available on the next press.
-            } else {
-                const bomb = game.nearbyBomb();
-                if (bomb) openBomb(bomb);
+        if (!panelOpen) {
+            if (updateResult.dashed && updateResult.dashTarget) {
+                game.cuffEnemy(updateResult.dashTarget, "dash", { fromBehind: updateResult.dashFromBehind });
+            }
+
+            if (input.interactPressed()) {
+                const enemy = game.nearbyEnemy("interact");
+                if (enemy && game.cuffEnemy(enemy, "interact")) {
+                    // Cuffing takes this E press; bombs remain available on the next press.
+                } else {
+                    const bomb = game.nearbyBomb();
+                    if (bomb) openBomb(bomb);
+                }
             }
         }
 
-        if (state === "playing") game.resolveEnemyAttack();
+        if (state === "playing" || state === "bomb") game.resolveEnemyAttack();
 
         // Tryb "bombs": rozbrojone wszystkie bomby i dojście do drzwi po prawej. Tryb "panel": wystarczy rozbrojony panel.
         if (state === "playing" && game.allDefused() && (!game.exitRequired || game.atRightEdge())) winGame();
 
         // Utrata ostatniego HP (kolce albo przeciwnik) kończy poziom. Wcześniejsze trafienia
         // tylko cofają gracza do checkpointu (patrz game.js).
-        if (state === "playing" && game.isDead()) {
+        if ((state === "playing" || state === "bomb") && game.isDead()) {
             loseGame(game.deathReason === "blast" ? "Kamikaze cię wysadził!" : "Straciłeś całe życie!");
         }
-    } else if (state === "bomb") {
-        // Postać stoi, ale czas leci dalej.
-        if (!game.allDefused()) game.tickTimer(dt);
 
-        const answer = input.answerPressed(); // klawisze A, B, C
-        if (answer !== -1) answerBomb(answer);
+        if (state === "bomb") {
+            const answer = input.answerPressed(); // klawisze A, B, C
+            if (answer !== -1) answerBomb(answer);
+            else if (input.escapePressed() || input.grapplePressed()) closeBomb(); // Esc albo Q zamyka panel
 
-        const text = `Czas: ${formatTime(game.timeLeft)}`;
-        if (text !== shownBombTime) {
-            shownBombTime = text;
-            bombTimer.textContent = text;
+            const text = `Czas: ${formatTime(game.timeLeft)}`;
+            if (text !== shownBombTime) {
+                shownBombTime = text;
+                bombTimer.textContent = text;
+            }
         }
     }
 
@@ -580,7 +601,7 @@ function frame(now) {
         viewport.endRaw();
     } else {
         const ctx = viewport.begin();
-        game.draw(ctx, { debug, fps, hud: state === "playing" });
+        game.draw(ctx, { debug, fps, hud: state === "playing" || state === "bomb" });
         viewport.end();
     }
 

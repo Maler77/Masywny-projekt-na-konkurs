@@ -139,39 +139,4 @@ export const LEVELS = [
             enemy("strong", 896, 208, { id: "strong-1", speed: 36 }),
         ],
     },
-    {
-        name: "Poziom 4",
-        subtitle: "Szyb i dash",
-        questionCategory: "hard",
-        thumbnail: "level4Thumbnail",
-        background: ["background4"],
-        timeLimit: 120,
-        width: 1472,   // 46 tili
-        height: 1000,  // wyższy niż ekran: kamera podąża za graczem w pionie
-        spawn: { x: 64, y: 960 },
-        platforms: [
-            ground(1472, 1000),
-            // bomba na rozgrzewkę, zwykły skok
-            platform(256, 912, 96, 48),  // blok do podłogi
-            // SZYB: dwie ściany naprzeciw siebie (odstęp 96 = 3 tile), wspinaczka odbijaniem się od nich.
-            // Lewa ściana kończy się 64 px (2 tile) nad podłogą: pod nią wchodzi się do szybu.
-            platform(512, 384, 32, 512, "wall"),
-            platform(640, 384, 32, 576, "wall"),
-            // półka na szczycie szybu
-            platform(672, 384, 176),
-            // SKOK Z DASHEM: odstęp 208 px (bez dasha da się maks. ok. 156, z dashem ok. 260)
-            platform(1056, 384, 128),
-            // koniec poziomu: zwykły skok w górę
-            platform(1248, 336, 128),
-        ],
-        bombs: [
-            bomb(304, 912),
-            bomb(752, 384),
-            bomb(1120, 384),
-            bomb(1312, 336),
-        ],
-        spikes: [
-            spike(384, 960, 2),   // podłoga między blokiem a wejściem do szybu
-        ],
-    },
 ];

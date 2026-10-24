@@ -42,11 +42,12 @@ export function createStoryPlayer(root, story) {
 
     // Czat
     const chatLayer = addLayer("chat");
+    const topicHeading = el("h2", "story-topic");
     const chatSlot = el("div", "chat-slot");
     const nextButton = el("button", "menu__button menu__button--primary story-next", "Dalej");
     nextButton.type = "button";
     nextButton.hidden = true;
-    chatLayer.append(chatSlot, nextButton);
+    chatLayer.append(topicHeading, chatSlot, nextButton);
 
     // Policja
     const policeLayer = addLayer("police");
@@ -137,7 +138,7 @@ export function createStoryPlayer(root, story) {
     }
 
     // ---------- Czat ----------
-    function buildChat(chapter, topicIndex) {
+    function buildChat(chapter) {
         const chat = el("div", "chat");
 
         const header = el("div", "chat__header");
@@ -147,7 +148,6 @@ export function createStoryPlayer(root, story) {
         const status = el("span", "chat__status", chapter.status);
         info.append(name, status);
         header.append(avatar, info);
-        if (chapter.topic) header.append(el("span", "chat__topic", `${topicIndex + 1} · ${chapter.topic}`));
 
         const list = el("div", "chat__list");
         const typing = el("div", "chat__typing");
@@ -201,15 +201,28 @@ export function createStoryPlayer(root, story) {
         return Math.min(msg.delay, base);
     }
 
-    async function chatScene(run, chapter, topicIndex, options) {
+    async function chatScene(run, chapter, options) {
         setStage("chat");
         fast = false;
         nextButton.hidden = true;
-        const ui = buildChat(chapter, topicIndex);
-        showLayer("chat");
+        const ui = buildChat(chapter);
         const lastAuthorRef = { name: null };
 
+        // Najpierw pojawia się sam temat rozdziału (jak tytuł), dopiero potem okno grupy pod nim.
+        chatSlot.classList.remove("is-in");
+        topicHeading.className = "story-topic";
+        topicHeading.textContent = chapter.topic;
+        chatLayer.style.setProperty("--fade", `${story.topicIntro.fade}s`);
+        showLayer("chat");
         await wait(0.8);
+        if (run !== runId) return;
+        if (chapter.topic) {
+            topicHeading.classList.add("is-in");
+            await wait(story.topicIntro.fade + story.topicIntro.hold);
+            if (run !== runId) return;
+        }
+        chatSlot.classList.add("is-in");
+        await wait(0.9);
         for (const msg of chapter.messages) {
             if (run !== runId) return;
             const typing = msg.system ? 0 : typingTime(msg);
@@ -319,14 +332,14 @@ export function createStoryPlayer(root, story) {
     });
 
     // ---------- Publiczne API ----------
-    // chapters: pozycja w story.chapters (od 0). options: { showTitle, nextLabel, onDone }.
-    async function play(chapter, topicIndex, options = {}) {
+    // chapter: wpis z story.chapters. options: { showTitle, nextLabel, onDone }.
+    async function play(chapter, options = {}) {
         const opts = { showTitle: false, nextLabel: "Dalej", onDone: null, ...options };
         const run = ++runId;
         try {
             if (opts.showTitle && story.title) await titleScene(run);
             if (run !== runId) return;
-            if (chapter.messages.length > 0) await chatScene(run, chapter, topicIndex, opts);
+            if (chapter.messages.length > 0) await chatScene(run, chapter, opts);
             for (const scene of chapter.then) {
                 if (run !== runId) return;
                 if (scene.scene === "police") await policeScene(run, scene);

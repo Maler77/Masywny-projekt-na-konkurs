@@ -1,5 +1,7 @@
 {
     "title": {"text": "Zanim wybuchnie", "subtitle": "historia jednej grupy", "fade": 2.2, "hold": 2.4},
+    "showTitle": false,
+    "topicIntro": {"fade": 1.6, "hold": 1.2},
 
     "me": "Kamil",
     "defaultDelay": 2.0,
